@@ -59,6 +59,37 @@ class SyncManifest {
         fs.writeFileSync(tmpPath, json, 'utf8');
         fs.renameSync(tmpPath, this.manifestPath);
     }
+
+    set(filename, messageId) {
+        this._data[filename] = messageId;
+        this._save();
+    }
+
+    has(filename) {
+        return Object.prototype.hasOwnProperty.call(this._data, filename);
+    }
+
+    getByFilename(filename) {
+        return this._data[filename];
+    }
+
+    getByMessageId(messageId) {
+        for (const [key, value] of Object.entries(this._data)) {
+            if (value === messageId) {
+                return key;
+            }
+        }
+        return undefined;
+    }
+
+    delete(filename) {
+        delete this._data[filename];
+        this._save();
+    }
+
+    entries() {
+        return Object.entries(this._data);
+    }
 }
 
 module.exports = SyncManifest;
