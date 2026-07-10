@@ -170,6 +170,52 @@ To start watching a group, run:`);
         }
         // ---------------------------
 
+        // --- STARTUP SCAN (Offline Changes) ---
+        console.log('🔍 Scanning for offline changes...');
+        const startupUploadQueue = [];
+
+        // 1. Detect offline file deletions (Tracked in manifest but missing locally)
+        for (const [filename, messageId] of manifest.entries()) {
+            try {
+                if (!fs.existsSync(path.join(groupFolder, filename))) {
+                    const msg = await client.getMessageById(messageId);
+                    if (msg) {
+                        await msg.delete(true);
+                        console.log(
+                            '🗑️ Revoked orphan message for deleted file:',
+                            filename,
+                        );
+                    }
+                    manifest.delete(filename);
+                }
+            } catch (err) {
+                console.error(
+                    '❌ Error processing offline deletion for',
+                    filename,
+                    ':',
+                    err,
+                );
+            }
+        }
+
+        // 2. Detect offline file additions (Local files not tracked in manifest)
+        const localFiles = fs.readdirSync(groupFolder);
+        for (const filename of localFiles) {
+            if (
+                filename === 'sync-manifest.json' ||
+                filename === 'skipped-files.log' ||
+                filename.endsWith('.tmp') ||
+                manifest.has(filename)
+            ) {
+                continue;
+            }
+            startupUploadQueue.push(path.join(groupFolder, filename));
+            console.log('📤 Queued untracked local file for upload:', filename);
+        }
+        console.log(
+            `✅ Startup scan complete. ${startupUploadQueue.length} files queued for upload.`,
+        );
+
         console.log('Waiting for new media messages...');
     }
 });
