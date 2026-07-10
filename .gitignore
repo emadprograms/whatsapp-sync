@@ -78,3 +78,8 @@ typings/
 # IDE's
 .idea
 .vscode
+
+.gemini/
+.agents/
+.planning/
+downloads/
