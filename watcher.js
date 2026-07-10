@@ -1,0 +1,258 @@
+const { Client, LocalAuth } = require('./index');
+const qrcode = require('qrcode-terminal');
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
+
+const SyncManifest = require('./src/SyncManifest');
+
+// === HELPERS ===
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp * 1000);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const time = date.toTimeString().split(' ')[0].replace(/:/g, '-');
+    return `${day}-${month}-${year}-${time}`;
+}
+
+function getExtension(media) {
+    if (media.filename) {
+        return path.extname(media.filename);
+    }
+    const mime = require('mime');
+    const mimetypeStr = media.mimetype ? media.mimetype.split(';')[0] : '';
+    return `.${mime.getExtension(mimetypeStr) || 'bin'}`;
+}
+
+// === CONFIGURATION ===
+// You can set this via environment variable: GROUP_ID=123456789@g.us node watcher.js
+const TARGET_GROUP_ID = process.env.GROUP_ID;
+const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
+
+let manifest = null;
+
+if (!fs.existsSync(DOWNLOADS_DIR)) {
+    fs.mkdirSync(DOWNLOADS_DIR);
+}
+
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        headless: true,
+        executablePath:
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+        ],
+    },
+});
+
+// Graceful shutdown: kill browser when user presses Ctrl+C
+process.on('SIGINT', async () => {
+    console.log('\n🛑 Stopping watcher...');
+    process.exit(0);
+});
+
+client.on('qr', (qr) => {
+    console.log('QR RECEIVED. Please scan it with your WhatsApp app:');
+    qrcode.generate(qr, { small: true });
+});
+
+client.on('authenticated', () => {
+    console.log('Successfully authenticated!');
+
+    // Watchdog to track progress towards 'ready'
+    const watchdog = setInterval(async () => {
+        try {
+            const page = client.pupPage;
+            if (page) {
+                const title = await page.title();
+                const url = page.url();
+                console.log(
+                    `🕒 Watchdog: Page Title: "${title}" | URL: ${url}`,
+                );
+            }
+        } catch (e) {
+            console.log(
+                '🕒 Watchdog: Waiting for page to be available...',
+                e.message,
+            );
+        }
+    }, 5000);
+
+    client.on('ready', () => {
+        clearInterval(watchdog);
+    });
+});
+
+client.on('auth_failure', (msg) => {
+    console.error('❌ Authentication failure:', msg);
+});
+
+client.on('disconnected', (reason) => {
+    console.log('Disconnected:', reason);
+});
+
+client.on('ready', async () => {
+    console.log('Client is ready!');
+
+    if (!TARGET_GROUP_ID) {
+        console.log(`
+⚠️  No TARGET_GROUP_ID provided.`);
+        console.log('Listing your groups so you can find the ID:');
+        console.log('--------------------------------------------------');
+        const chats = await client.getChats();
+        const groups = chats.filter((chat) => chat.isGroup);
+
+        groups.forEach((group) => {
+            console.log(`Name: ${group.name} | ID: ${group.id._serialized}`);
+        });
+        console.log('--------------------------------------------------');
+        console.log(`
+To start watching a group, run:`);
+        console.log(`GROUP_ID=your_group_id_here node watcher.js`);
+        process.exit(0);
+    } else {
+        console.log(`Watching group: ${TARGET_GROUP_ID}`);
+
+        const groupFolder = path.join(
+            DOWNLOADS_DIR,
+            TARGET_GROUP_ID.split('@')[0],
+        );
+        if (!fs.existsSync(groupFolder))
+            fs.mkdirSync(groupFolder, { recursive: true });
+        manifest = new SyncManifest(
+            path.join(groupFolder, 'sync-manifest.json'),
+        );
+
+        // --- SYNC EXISTING MEDIA ---
+        try {
+            console.log('🔄 Syncing recent media from group history...');
+            const chat = await client.getChatById(TARGET_GROUP_ID);
+            const messages = await chat.fetchMessages({ limit: 1000 });
+
+            let downloadedCount = 0;
+            for (const msg of messages) {
+                if (msg.hasMedia) {
+                    const media = await msg.downloadMedia();
+                    if (media) {
+                        let baseFilename = media.filename;
+                        if (!baseFilename) {
+                            const mime = require('mime');
+                            const mimetypeStr = media.mimetype
+                                ? media.mimetype.split(';')[0]
+                                : '';
+                            const ext = mime.getExtension(mimetypeStr) || 'bin';
+                            baseFilename = `download.${ext}`;
+                        }
+
+                        const contact = await msg.getContact();
+                        const senderName =
+                            contact.name ||
+                            contact.pushname ||
+                            contact.number ||
+                            'Unknown';
+                        const safeSenderName = senderName.replace(
+                            /[\\/:*?"<>|]/g,
+                            '-',
+                        );
+
+                        const timestamp = formatTimestamp(msg.timestamp);
+                        const uniqueId = msg.id.id.slice(-5);
+                        const extension = getExtension(media);
+
+                        const filename = `${timestamp}_${uniqueId}_${safeSenderName}${extension}`;
+                        const filePath = path.join(groupFolder, filename);
+
+                        if (
+                            !fs.existsSync(filePath) &&
+                            !manifest.has(filename)
+                        ) {
+                            fs.writeFileSync(filePath, media.data, {
+                                encoding: 'base64',
+                            });
+                            manifest.set(filename, msg.id._serialized);
+                            downloadedCount++;
+                        }
+                    }
+                }
+            }
+            console.log(
+                `✅ Sync complete. Downloaded ${downloadedCount} existing media files.`,
+            );
+        } catch (err) {
+            console.error('❌ Error syncing group history:', err);
+        }
+        // ---------------------------
+
+        console.log('Waiting for new media messages...');
+    }
+});
+
+client.on('message_create', async (msg) => {
+    console.log(
+        `📩 Incoming message from: ${msg.from} | to: ${msg.to} | Has Media: ${msg.hasMedia}`,
+    );
+
+    // Only process messages from/to the target group
+    if (msg.from !== TARGET_GROUP_ID && msg.to !== TARGET_GROUP_ID) {
+        return;
+    }
+
+    if (msg.hasMedia) {
+        try {
+            console.log(`Detected media from ${msg.from}. Downloading...`);
+            const media = await msg.downloadMedia();
+
+            if (media) {
+                const groupFolder = path.join(
+                    DOWNLOADS_DIR,
+                    TARGET_GROUP_ID.split('@')[0],
+                );
+                if (!fs.existsSync(groupFolder)) {
+                    fs.mkdirSync(groupFolder, { recursive: true });
+                }
+
+                let baseFilename = media.filename;
+                if (!baseFilename) {
+                    const mime = require('mime');
+                    const mimetypeStr = media.mimetype
+                        ? media.mimetype.split(';')[0]
+                        : '';
+                    const ext = mime.getExtension(mimetypeStr) || 'bin';
+                    baseFilename = `download.${ext}`;
+                }
+
+                const contact = await msg.getContact();
+                const senderName =
+                    contact.name ||
+                    contact.pushname ||
+                    contact.number ||
+                    'Unknown';
+                const safeSenderName = senderName.replace(/[\\/:*?"<>|]/g, '-');
+
+                const timestamp = formatTimestamp(msg.timestamp);
+                const uniqueId = msg.id.id.slice(-5);
+                const extension = getExtension(media);
+
+                const filename = `${timestamp}_${uniqueId}_${safeSenderName}${extension}`;
+                const filePath = path.join(groupFolder, filename);
+
+                fs.writeFileSync(filePath, media.data, { encoding: 'base64' });
+                if (manifest) {
+                    manifest.set(filename, msg.id._serialized);
+                }
+
+                console.log(`✅ Saved: ${filePath}`);
+            }
+        } catch (err) {
+            console.error('❌ Failed to download media:', err);
+        }
+    }
+});
+
+client.initialize();
