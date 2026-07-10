@@ -373,7 +373,6 @@ client.on('message_revoke_everyone', handleRevocation);
 client.on('message_revoke_me', handleRevocation);
 
 client.on('message_create', async (msg) => {
-    if (msg.id.fromMe) return;
     console.log(
         `📩 Incoming message from: ${msg.from} | to: ${msg.to} | Has Media: ${msg.hasMedia}`,
     );
@@ -384,6 +383,15 @@ client.on('message_create', async (msg) => {
     }
 
     if (msg.hasMedia) {
+        if (msg.id.fromMe && msg.body && groupFolder) {
+            const path = require('path');
+            const fs = require('fs');
+            const potentialEchoPath = path.join(groupFolder, msg.body);
+            if (fs.existsSync(potentialEchoPath)) {
+                console.log(`🔄 Ignoring echo of our own upload: ${msg.body}`);
+                return;
+            }
+        }
         try {
             console.log(`Detected media from ${msg.from}. Downloading...`);
             const media = await msg.downloadMedia();
