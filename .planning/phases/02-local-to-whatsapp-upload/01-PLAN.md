@@ -3,7 +3,6 @@ wave: 1
 depends_on: []
 files_modified:
   - watcher.js
-  - src/SyncManifest.js
 autonomous: true
 ---
 
@@ -105,7 +104,15 @@ Threats:
 - .planning/phases/02-local-to-whatsapp-upload/02-RESEARCH.md (sections 3 and 4 — upload mechanics and queue design)
 </read_first>
 <action>
-1. Inside `client.on('ready')`, after the startup scan block, declare:
+0. **Guard against duplicate initialization (Review Fix — HIGH):** At module scope (near the top of `watcher.js`, below `let groupFolder = null;`), declare `let isWatcherInitialized = false;`. At the very start of the Phase 2 block inside `client.on('ready')` (before the startup scan), add:
+   ```js
+   if (isWatcherInitialized) return;
+   isWatcherInitialized = true;
+   ```
+   This prevents the watcher, upload queue, and chokidar from being created multiple times if the WhatsApp client disconnects and the `ready` event fires again.
+
+1. Inside `client.on('ready')`, after the startup scan block (and after the guard above), declare:
+   - `const MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;` (64 MB limit)
    - `const uploadQueue = [...startupUploadQueue];` (seeded with any files discovered during startup scan)
    - `let isProcessingQueue = false;`
 
@@ -116,6 +123,7 @@ Threats:
    - `const filename = path.basename(filePath);`
    - Check `if (manifest.has(filename))` — if true, `continue` (skip already-tracked files).
    - Check `if (!fs.existsSync(filePath))` — if true, `continue` (file may have been deleted between queue and processing).
+   - **File size guard (Review Fix — MEDIUM):** Call `const stat = fs.statSync(filePath);`. If `stat.size > MAX_FILE_SIZE_BYTES`, log `${new Date().toISOString()} | SIZE_SKIP | ${filename} | ${stat.size} bytes exceeds ${MAX_FILE_SIZE_BYTES} limit\n` to `path.join(groupFolder, 'skipped-files.log')` using `fs.appendFileSync`, then `continue`.
    - Wrap the upload in try/catch:
      a. `const media = MessageMedia.fromFilePath(filePath);`
      b. `const sentMsg = await client.sendMessage(TARGET_GROUP_ID, media, { caption: filename });`
@@ -139,6 +147,10 @@ Threats:
    - `fsWatcher.on('add', (filePath) => { enqueueUpload(filePath); });`
 </action>
 <acceptance_criteria>
+- Source assertion: `let isWatcherInitialized = false;` is declared at module scope in `watcher.js`.
+- Source assertion: The Phase 2 block inside `client.on('ready')` begins with `if (isWatcherInitialized) return; isWatcherInitialized = true;`.
+- Source assertion: `const MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;` is declared.
+- Source assertion: `fs.statSync(filePath).size` is checked against `MAX_FILE_SIZE_BYTES` before `MessageMedia.fromFilePath`. Files exceeding the limit are logged to `skipped-files.log` with `SIZE_SKIP` tag and skipped.
 - Source assertion: `uploadQueue` is initialized seeded with `startupUploadQueue` contents via spread.
 - Source assertion: `processUploadQueue` contains a `while (uploadQueue.length > 0)` loop.
 - Source assertion: `manifest.has(filename)` check exists before `MessageMedia.fromFilePath`.
@@ -150,6 +162,8 @@ Threats:
 - Source assertion: `chokidar.watch(groupFolder, { ignoreInitial: true, ... })` — NOT `ignoreInitial: false`.
 - Source assertion: `enqueueUpload` skips files named `sync-manifest.json`, `skipped-files.log`, or ending with `.tmp`.
 - Behavior assertion: Running `node watcher.js` with GROUP_ID set and a new file dropped in the group folder results in that file being sent as a WhatsApp message.
+- Behavior assertion: If the WhatsApp client disconnects and reconnects (firing `ready` again), no duplicate watchers or queue processors are created.
+- Behavior assertion: Files larger than 64MB are logged to `skipped-files.log` and not uploaded.
 </acceptance_criteria>
 </task>
 
@@ -195,9 +209,12 @@ Threats:
 - src/Client.js (lines 774-796 — understand `message_revoke_everyone` event: emits `(message, revoked_msg)` where `message` is the revoked message in its current state)
 </read_first>
 <action>
-1. Add a new event listener in `watcher.js` (outside the `ready` handler, near the `message_create` listener):
+1. Add new event listeners in `watcher.js` (outside the `ready` handler, near the `message_create` listener):
 
    `client.on('message_revoke_everyone', async (msg, revokedMsg) => { ... });`
+   `client.on('message_revoke_me', async (msg, revokedMsg) => { ... });`
+
+   (Both listeners can share the same callback logic).
 
 2. Inside the handler:
    - Guard: `if (msg.from !== TARGET_GROUP_ID && msg.to !== TARGET_GROUP_ID) return;`
@@ -213,7 +230,7 @@ Threats:
 3. To make `groupFolder` accessible to this handler, hoist the `groupFolder` variable declaration to module scope (below `DOWNLOADS_DIR`). Initialize it as `let groupFolder = null;` and assign its value inside the `ready` handler where it's currently computed.
 </action>
 <acceptance_criteria>
-- Source assertion: `client.on('message_revoke_everyone', async (msg, revokedMsg) => {` exists in `watcher.js`.
+- Source assertion: `client.on('message_revoke_everyone', async (msg, revokedMsg) => {` and `client.on('message_revoke_me', async (msg, revokedMsg) => {` exist in `watcher.js`.
 - Source assertion: `manifest.getByMessageId(msg.id._serialized)` is called — NOT manual Object.entries iteration.
 - Source assertion: `fs.unlinkSync(filePath)` is called when a tracked message is revoked.
 - Source assertion: `manifest.delete(filename)` is called after file deletion.
@@ -236,10 +253,14 @@ must_haves:
     - Deleting a file from the local folder triggers msg.delete(true) revocation for the corresponding WhatsApp message
     - Revoking a tracked message in the WhatsApp group deletes the corresponding local file via manifest.getByMessageId()
     - Upload failures are logged to skipped-files.log with timestamp and error message
+    - The watcher and upload queue are initialized only once, guarded by isWatcherInitialized flag (prevents duplicate watchers on reconnect)
+    - Files exceeding 64MB are skipped and logged to skipped-files.log with SIZE_SKIP tag before any read into memory
   prohibitions:
     - The bot must NOT re-download files that it just uploaded (msg.id.fromMe guard)
     - Chokidar must NOT trigger upload for .tmp files
     - The startup scan must NOT use ignoreInitial:false — it uses readdirSync for offline additions and manifest.entries() for offline deletions
+    - The ready event must NOT create duplicate chokidar watchers or queue processors on reconnection — isWatcherInitialized guard prevents this
+    - Files larger than MAX_FILE_SIZE_BYTES (64MB) must NOT be passed to MessageMedia.fromFilePath — they are skipped before any I/O
 ```
 
 ## Prior-Attempt Issue Resolution
@@ -250,12 +271,16 @@ must_haves:
 | **BLOCKER — Offline file deletions** | Task 2.1 iterates `manifest.entries()` and checks `fs.existsSync()` for each tracked file. Missing files trigger `client.getMessageById()` → `msg.delete(true)` → `manifest.delete()`. |
 | **WARNING — Concrete SyncManifest API** | Task 3.2 uses `manifest.getByFilename(filename)`. Task 4.1 uses `manifest.getByMessageId(msg.id._serialized)`. No vague iteration instructions. |
 | **WARNING — Upload loop race condition (Echoes)** | Task 1.1 implements the `.tmp` write pattern: `writeFileSync(path + '.tmp')` → `manifest.set()` → `renameSync()`. Task 3.1 configures chokidar to ignore `.tmp` files and `enqueueUpload` skips `.tmp` files. |
+| **HIGH — Duplicate Watcher Initialization (Review)** | Task 3.1 step 0 adds `let isWatcherInitialized = false;` at module scope, checked at start of the Phase 2 block inside `ready`. Prevents duplicate chokidar watchers and queue processors on WhatsApp reconnect. |
+| **MEDIUM — Blocking I/O on Large Files (Review)** | Task 3.1 step 2 adds `fs.statSync` size check against `MAX_FILE_SIZE_BYTES` (64MB) before calling `MessageMedia.fromFilePath`. Oversized files are logged to `skipped-files.log` with `SIZE_SKIP` tag and skipped. |
 
 ## Artifacts this phase produces
 
 ### New symbols in `watcher.js`
 - `MessageMedia` — import from `./index`
 - `groupFolder` — hoisted to module scope as `let groupFolder = null;`
+- `isWatcherInitialized` — boolean guard at module scope, prevents duplicate initialization on reconnect
+- `MAX_FILE_SIZE_BYTES` — constant (`64 * 1024 * 1024`), max file size for upload
 - `startupUploadQueue` — array of file paths collected during startup scan
 - `uploadQueue` — array of file paths pending upload
 - `isProcessingQueue` — boolean flag for queue processing state
