@@ -287,6 +287,10 @@ To start watching a group, run:`);
                 ignoreInitial: true,
                 ignored:
                     /(^|[/\\])\.tmp$|sync-manifest\.json|skipped-files\.log/,
+                awaitWriteFinish: {
+                    stabilityThreshold: 2000,
+                    pollInterval: 100,
+                },
             });
 
             fsWatcher.on('add', (filePath) => {
