@@ -244,19 +244,19 @@ Threats:
 ```yaml
 must_haves:
   truths:
-    - Files placed in the local watched folder are uploaded to WhatsApp with their filename as the caption
-    - The bot waits ~3 seconds between consecutive file uploads
-    - Downloaded files use the format '[uniqueId]_[originalFilename]'
+    - D-04, D-05: Files placed in the local watched folder are uploaded to WhatsApp with their filename as the caption
+    - D-06: The bot waits ~3 seconds between consecutive file uploads
+    - D-08: Downloaded files use the format '[uniqueId]_[originalFilename]'
     - Downloaded files are saved with .tmp extension first, manifest is updated, then renamed to final name — preventing chokidar echo uploads
-    - The startup scan detects files deleted locally while offline and revokes their WhatsApp messages via manifest.entries() cross-reference
-    - The startup scan detects files added locally while offline and queues them for upload
-    - Deleting a file from the local folder triggers msg.delete(true) revocation for the corresponding WhatsApp message
+    - D-03: The startup scan checks for manifest consistency. If a file is missing locally, it revokes the WA message. (Also covers Two-Way Integrity).
+    - D-02: The startup scan detects files added locally while offline and queues them for upload (Full Startup Scan)
+    - D-09: Deleting a file from the local folder triggers msg.delete(true) revocation for the corresponding WhatsApp message
     - Revoking a tracked message in the WhatsApp group deletes the corresponding local file via manifest.getByMessageId()
-    - Upload failures are logged to skipped-files.log with timestamp and error message
+    - D-07: Upload failures are logged to skipped-files.log with timestamp and error message
     - The watcher and upload queue are initialized only once, guarded by isWatcherInitialized flag (prevents duplicate watchers on reconnect)
     - Files exceeding 64MB are skipped and logged to skipped-files.log with SIZE_SKIP tag before any read into memory
   prohibitions:
-    - The bot must NOT re-download files that it just uploaded (msg.id.fromMe guard)
+    - D-01: The bot must NOT re-download files that it just uploaded (msg.id.fromMe guard)
     - Chokidar must NOT trigger upload for .tmp files
     - The startup scan must NOT use ignoreInitial:false — it uses readdirSync for offline additions and manifest.entries() for offline deletions
     - The ready event must NOT create duplicate chokidar watchers or queue processors on reconnection — isWatcherInitialized guard prevents this
