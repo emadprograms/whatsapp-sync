@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('./index');
+const { Client, LocalAuth, MessageMedia } = require('./index');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
@@ -25,6 +25,7 @@ const TARGET_GROUP_ID = process.env.GROUP_ID;
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 
 let manifest = null;
+let isWatcherInitialized = false;
 
 if (!fs.existsSync(DOWNLOADS_DIR)) {
     fs.mkdirSync(DOWNLOADS_DIR);
@@ -215,6 +216,93 @@ To start watching a group, run:`);
         console.log(
             `✅ Startup scan complete. ${startupUploadQueue.length} files queued for upload.`,
         );
+
+        // --- UPLOAD INFRASTRUCTURE ---
+        if (isWatcherInitialized) return;
+        isWatcherInitialized = true;
+
+        const MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;
+        const uploadQueue = [...startupUploadQueue];
+        let isProcessingQueue = false;
+
+        async function processUploadQueue() {
+            isProcessingQueue = true;
+            while (uploadQueue.length > 0) {
+                const filePath = uploadQueue.shift();
+                const filename = path.basename(filePath);
+
+                if (manifest.has(filename)) continue;
+                if (!fs.existsSync(filePath)) continue;
+
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (stat.size > MAX_FILE_SIZE_BYTES) {
+                        fs.appendFileSync(
+                            path.join(groupFolder, 'skipped-files.log'),
+                            `${new Date().toISOString()} | SIZE_SKIP | ${filename} | ${stat.size} bytes exceeds ${MAX_FILE_SIZE_BYTES} limit\n`,
+                        );
+                        continue;
+                    }
+
+                    const media = MessageMedia.fromFilePath(filePath);
+                    const sentMsg = await client.sendMessage(
+                        TARGET_GROUP_ID,
+                        media,
+                        {
+                            caption: filename,
+                        },
+                    );
+                    manifest.set(filename, sentMsg.id._serialized);
+                    console.log('✅ Uploaded:', filename);
+                    await new Promise((r) => setTimeout(r, 3000));
+                } catch (err) {
+                    fs.appendFileSync(
+                        path.join(groupFolder, 'skipped-files.log'),
+                        `${new Date().toISOString()} | SKIP | ${filename} | ${err.message}\n`,
+                    );
+                }
+            }
+            isProcessingQueue = false;
+        }
+
+        function enqueueUpload(filePath) {
+            const filename = path.basename(filePath);
+            if (
+                filename === 'sync-manifest.json' ||
+                filename === 'skipped-files.log' ||
+                filename.endsWith('.tmp') ||
+                manifest.has(filename)
+            ) {
+                return;
+            }
+            uploadQueue.push(filePath);
+            if (!isProcessingQueue) {
+                processUploadQueue().catch((err) =>
+                    console.error('❌ Upload queue error:', err),
+                );
+            }
+        }
+
+        try {
+            const chokidar = await import('chokidar');
+            const fsWatcher = chokidar.watch(groupFolder, {
+                ignoreInitial: true,
+                ignored:
+                    /(^|[/\\])\.tmp$|sync-manifest\.json|skipped-files\.log/,
+            });
+
+            fsWatcher.on('add', (filePath) => {
+                enqueueUpload(filePath);
+            });
+        } catch (err) {
+            console.error('❌ Failed to initialize chokidar watcher:', err);
+        }
+
+        if (uploadQueue.length > 0) {
+            processUploadQueue().catch((err) =>
+                console.error('❌ Startup upload queue error:', err),
+            );
+        }
 
         console.log('Waiting for new media messages...');
     }
