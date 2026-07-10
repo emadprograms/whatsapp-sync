@@ -159,6 +159,31 @@ To start watching a group, run:`);
                             downloadedCount++;
                         }
                     }
+                } else if (
+                    msg.type === 'revoked' ||
+                    msg.type === 'chat_msg_revoked'
+                ) {
+                    const filename = manifest.getByMessageId(
+                        msg.id._serialized,
+                    );
+                    if (filename) {
+                        const filePath = path.join(groupFolder, filename);
+                        if (fs.existsSync(filePath)) {
+                            try {
+                                fs.unlinkSync(filePath);
+                            } catch (err) {
+                                console.error(
+                                    'Error deleting offline revoked file:',
+                                    err,
+                                );
+                            }
+                        }
+                        manifest.delete(filename);
+                        console.log(
+                            '🗑️ Deleted local file for offline revoked message:',
+                            filename,
+                        );
+                    }
                 }
             }
             console.log(
@@ -222,6 +247,38 @@ To start watching a group, run:`);
         const MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;
         const uploadQueue = [...startupUploadQueue];
         let isProcessingQueue = false;
+
+        const deleteQueue = [];
+        let isProcessingDeleteQueue = false;
+
+        async function processDeleteQueue() {
+            isProcessingDeleteQueue = true;
+            while (deleteQueue.length > 0) {
+                const filename = deleteQueue.shift();
+                const messageId = manifest.getByFilename(filename);
+                try {
+                    const msg = await client.getMessageById(messageId);
+                    if (msg) {
+                        await msg.delete(true);
+                        console.log(
+                            '🗑️ Revoked WhatsApp message for deleted file:',
+                            filename,
+                        );
+                    }
+                } catch (err) {
+                    console.error(
+                        '❌ Error revoking message for deleted file',
+                        filename,
+                        ':',
+                        err,
+                    );
+                } finally {
+                    manifest.delete(filename);
+                    await new Promise((r) => setTimeout(r, 2000));
+                }
+            }
+            isProcessingDeleteQueue = false;
+        }
 
         async function processUploadQueue() {
             isProcessingQueue = true;
@@ -330,13 +387,17 @@ To start watching a group, run:`);
             const chokidar = await import('chokidar');
             const fsWatcher = chokidar.watch(groupFolder, {
                 ignoreInitial: true,
-                ignored:
-                    /(^|[/\\])\.tmp$|sync-manifest\.json|skipped-files\.log/,
+                ignored: /.*\.tmp$|^sync-manifest\.json$|^skipped-files\.log$/,
+                ignorePermissionErrors: true,
                 awaitWriteFinish: {
                     stabilityThreshold: 2000,
                     pollInterval: 100,
                 },
             });
+
+            fsWatcher.on('error', (error) =>
+                console.error('Chokidar Watcher error:', error),
+            );
 
             fsWatcher.on('add', (filePath) => {
                 enqueueUpload(filePath);
@@ -353,25 +414,11 @@ To start watching a group, run:`);
                 }
                 if (!manifest.has(filename)) return;
 
-                const messageId = manifest.getByFilename(filename);
-                try {
-                    const msg = await client.getMessageById(messageId);
-                    if (msg) {
-                        await msg.delete(true);
-                        console.log(
-                            '🗑️ Revoked WhatsApp message for deleted file:',
-                            filename,
-                        );
-                    }
-                } catch (err) {
-                    console.error(
-                        '❌ Error revoking message for deleted file',
-                        filename,
-                        ':',
-                        err,
+                deleteQueue.push(filename);
+                if (!isProcessingDeleteQueue) {
+                    processDeleteQueue().catch((err) =>
+                        console.error('❌ Delete queue error:', err),
                     );
-                } finally {
-                    manifest.delete(filename);
                 }
             });
         } catch (err) {
