@@ -7,8 +7,8 @@
  * https://pptr.dev/api/puppeteer.page.removeexposedfunction
  *
  * @param {object} page - Puppeteer Page instance
- * @param {string} name
- * @param {Function} fn
+ * @param {string} name - name of function
+ * @param {Function} fn - function to expose
  */
 async function exposeFunctionIfAbsent(page, name, fn) {
     const exist = await page.evaluate((name) => {
@@ -17,7 +17,18 @@ async function exposeFunctionIfAbsent(page, name, fn) {
     if (exist) {
         return;
     }
-    await page.exposeFunction(name, fn);
+    try {
+        await page.exposeFunction(name, fn);
+    } catch (e) {
+        if (
+            e.message &&
+            (e.message.includes('already exposed') ||
+                e.message.includes('Target closed'))
+        ) {
+            return;
+        }
+        throw e;
+    }
 }
 
 module.exports = { exposeFunctionIfAbsent };

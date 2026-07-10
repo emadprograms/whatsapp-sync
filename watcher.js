@@ -4,9 +4,21 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// ... (existing imports)
 const SyncManifest = require('./src/SyncManifest');
 
+// === GLOBAL ERROR HANDLING ===
+process.on('uncaughtException', (err) => {
+    console.error('💥 Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // === HELPERS ===
+// ... (existing helpers)
+
 function formatTimestamp(timestamp) {
     const date = new Date(timestamp * 1000);
     const day = String(date.getDate()).padStart(2, '0');

@@ -290,80 +290,123 @@ class Client extends EventEmitter {
                 this.pupPage,
                 'onAppStateHasSyncedEvent',
                 async () => {
-                    const authEventPayload =
-                        await this.authStrategy.getAuthEventPayload();
-                    /**
-                     * Emitted when authentication is successful
-                     * @event Client#authenticated
-                     */
-                    this.emit(Events.AUTHENTICATED, authEventPayload);
+                    if (this._isReadying) return;
+                    this._isReadying = true;
 
-                    const injected = await this.pupPage.evaluate(async () => {
-                        return typeof window.WWebJS !== 'undefined';
-                    });
-
-                    if (!injected) {
-                        if (
-                            this.options.webVersionCache.type === 'local' &&
-                            this.currentIndexHtml
-                        ) {
-                            const { type: webCacheType, ...webCacheOptions } =
-                                this.options.webVersionCache;
-                            const webCache = WebCacheFactory.createWebCache(
-                                webCacheType,
-                                webCacheOptions,
-                            );
-
-                            await webCache.persist(
-                                this.currentIndexHtml,
-                                version,
-                            );
-                        }
-
-                        // Load util functions (serializers, helper functions)
-                        await this.pupPage.evaluate(LoadUtils);
-
-                        await this.pupPage
-                            .waitForFunction(
-                                'typeof window.WWebJS !== "undefined"',
-                                { timeout: 30000 },
-                            )
-                            .catch(() => {
-                                throw 'ready timeout';
-                            });
-
+                    try {
+                        console.log(
+                            '[Client.js] onAppStateHasSyncedEvent called',
+                        );
+                        const authEventPayload =
+                            await this.authStrategy.getAuthEventPayload();
                         /**
-                         * Current connection information
-                         * @type {ClientInfo}
+                         * Emitted when authentication is successful
+                         * @event Client#authenticated
                          */
-                        this.info = new ClientInfo(
-                            this,
-                            await this.pupPage.evaluate(() => {
-                                return {
-                                    ...window
-                                        .require('WAWebConnModel')
-                                        .Conn.serialize(),
-                                    wid:
-                                        window
-                                            .require('WAWebUserPrefsMeUser')
-                                            .getMaybeMePnUser() ||
-                                        window
-                                            .require('WAWebUserPrefsMeUser')
-                                            .getMaybeMeLidUser(),
-                                };
-                            }),
+                        this.emit(Events.AUTHENTICATED, authEventPayload);
+                        console.log('[Client.js] Events.AUTHENTICATED emitted');
+
+                        const injected = await this.pupPage.evaluate(
+                            async () => {
+                                return typeof window.WWebJS !== 'undefined';
+                            },
                         );
 
-                        this.interface = new InterfaceController(this);
+                        if (!injected) {
+                            console.log(
+                                '[Client.js] window.WWebJS not injected, starting injection...',
+                            );
+                            if (
+                                this.options.webVersionCache.type === 'local' &&
+                                this.currentIndexHtml
+                            ) {
+                                const {
+                                    type: webCacheType,
+                                    ...webCacheOptions
+                                } = this.options.webVersionCache;
+                                const webCache = WebCacheFactory.createWebCache(
+                                    webCacheType,
+                                    webCacheOptions,
+                                );
 
-                        await this.attachEventListeners();
+                                await webCache.persist(
+                                    this.currentIndexHtml,
+                                    version,
+                                );
+                            }
+
+                            // Load util functions (serializers, helper functions)
+                            console.log('[Client.js] Executing LoadUtils...');
+                            await this.pupPage.evaluate(LoadUtils);
+
+                            console.log(
+                                '[Client.js] Waiting for window.WWebJS to be defined...',
+                            );
+                            await this.pupPage
+                                .waitForFunction(
+                                    'typeof window.WWebJS !== "undefined"',
+                                    { timeout: 30000 },
+                                )
+                                .catch((err) => {
+                                    console.error(
+                                        '[Client.js] Ready timeout error:',
+                                        err,
+                                    );
+                                    throw 'ready timeout';
+                                });
+                            console.log(
+                                '[Client.js] window.WWebJS is now defined',
+                            );
+
+                            /**
+                             * Current connection information
+                             * @type {ClientInfo}
+                             */
+                            console.log('[Client.js] Creating ClientInfo...');
+                            this.info = new ClientInfo(
+                                this,
+                                await this.pupPage.evaluate(() => {
+                                    return {
+                                        ...window
+                                            .require('WAWebConnModel')
+                                            .Conn.serialize(),
+                                        wid:
+                                            window
+                                                .require('WAWebUserPrefsMeUser')
+                                                .getMaybeMePnUser() ||
+                                            window
+                                                .require('WAWebUserPrefsMeUser')
+                                                .getMaybeMeLidUser(),
+                                    };
+                                }),
+                            );
+
+                            console.log(
+                                '[Client.js] Creating InterfaceController...',
+                            );
+                            this.interface = new InterfaceController(this);
+
+                            console.log(
+                                '[Client.js] Attaching event listeners...',
+                            );
+                            await this.attachEventListeners();
+                            console.log('[Client.js] Event listeners attached');
+                        }
+                        /**
+                         * Emitted when the client has initialized and is ready to receive messages.
+                         * @event Client#ready
+                         */
+                        console.log('[Client.js] Emitting Events.READY');
+                        this.emit(Events.READY);
+                        this.authStrategy.afterAuthReady();
+                    } catch (err) {
+                        console.error(
+                            '[Client.js] Error in onAppStateHasSyncedEvent:',
+                            err,
+                        );
+                        this._isReadying = false;
+                        throw err;
                     }
-                    /**
-                     * Emitted when the client has initialized and is ready to receive messages.
-                     * @event Client#ready
-                     */
-                    this.emit(Events.READY);
-                    this.authStrategy.afterAuthReady();
                 },
             );
             let lastPercent = null;
