@@ -19,24 +19,6 @@ process.on('unhandledRejection', (reason, promise) => {
 // === HELPERS ===
 // ... (existing helpers)
 
-function formatTimestamp(timestamp) {
-    const date = new Date(timestamp * 1000);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    const time = date.toTimeString().split(' ')[0].replace(/:/g, '-');
-    return `${day}-${month}-${year}-${time}`;
-}
-
-function getExtension(media) {
-    if (media.filename) {
-        return path.extname(media.filename);
-    }
-    const mime = require('mime');
-    const mimetypeStr = media.mimetype ? media.mimetype.split(';')[0] : '';
-    return `.${mime.getExtension(mimetypeStr) || 'bin'}`;
-}
-
 // === CONFIGURATION ===
 // You can set this via environment variable: GROUP_ID=123456789@g.us node watcher.js
 const TARGET_GROUP_ID = process.env.GROUP_ID;
@@ -162,32 +144,19 @@ To start watching a group, run:`);
                             baseFilename = `download.${ext}`;
                         }
 
-                        const contact = await msg.getContact();
-                        const senderName =
-                            contact.name ||
-                            contact.pushname ||
-                            contact.number ||
-                            'Unknown';
-                        const safeSenderName = senderName.replace(
-                            /[\\/:*?"<>|]/g,
-                            '-',
-                        );
-
-                        const timestamp = formatTimestamp(msg.timestamp);
                         const uniqueId = msg.id.id.slice(-5);
-                        const extension = getExtension(media);
-
-                        const filename = `${timestamp}_${uniqueId}_${safeSenderName}${extension}`;
+                        const filename = `${uniqueId}_${baseFilename}`;
                         const filePath = path.join(groupFolder, filename);
 
                         if (
                             !fs.existsSync(filePath) &&
                             !manifest.has(filename)
                         ) {
-                            fs.writeFileSync(filePath, media.data, {
+                            fs.writeFileSync(filePath + '.tmp', media.data, {
                                 encoding: 'base64',
                             });
                             manifest.set(filename, msg.id._serialized);
+                            fs.renameSync(filePath + '.tmp', filePath);
                             downloadedCount++;
                         }
                     }
@@ -206,6 +175,7 @@ To start watching a group, run:`);
 });
 
 client.on('message_create', async (msg) => {
+    if (msg.id.fromMe) return;
     console.log(
         `📩 Incoming message from: ${msg.from} | to: ${msg.to} | Has Media: ${msg.hasMedia}`,
     );
@@ -239,25 +209,17 @@ client.on('message_create', async (msg) => {
                     baseFilename = `download.${ext}`;
                 }
 
-                const contact = await msg.getContact();
-                const senderName =
-                    contact.name ||
-                    contact.pushname ||
-                    contact.number ||
-                    'Unknown';
-                const safeSenderName = senderName.replace(/[\\/:*?"<>|]/g, '-');
-
-                const timestamp = formatTimestamp(msg.timestamp);
                 const uniqueId = msg.id.id.slice(-5);
-                const extension = getExtension(media);
-
-                const filename = `${timestamp}_${uniqueId}_${safeSenderName}${extension}`;
+                const filename = `${uniqueId}_${baseFilename}`;
                 const filePath = path.join(groupFolder, filename);
 
-                fs.writeFileSync(filePath, media.data, { encoding: 'base64' });
+                fs.writeFileSync(filePath + '.tmp', media.data, {
+                    encoding: 'base64',
+                });
                 if (manifest) {
                     manifest.set(filename, msg.id._serialized);
                 }
+                fs.renameSync(filePath + '.tmp', filePath);
 
                 console.log(`✅ Saved: ${filePath}`);
             }
