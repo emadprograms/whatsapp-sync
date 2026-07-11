@@ -55,7 +55,7 @@ process.on('SIGINT', async () => {
         if (TARGET_GROUP_ID && isWatcherInitialized) {
             await client.sendMessage(
                 TARGET_GROUP_ID,
-                'powering off.. sync offline',
+                '🔴 powering off.. sync offline',
             );
         }
     } catch (err) {
@@ -504,7 +504,7 @@ To start watching a group, run:`);
         try {
             await client.sendMessage(
                 TARGET_GROUP_ID,
-                'powering on.. sync online',
+                '🟢 powering on.. sync online',
             );
         } catch (err) {
             console.error('Failed to send online message:', err);
