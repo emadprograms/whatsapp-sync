@@ -55,7 +55,7 @@ process.on('SIGINT', async () => {
         if (TARGET_GROUP_ID && isWatcherInitialized) {
             await client.sendMessage(
                 TARGET_GROUP_ID,
-                '🔴 powering off.. sync offline',
+                '💤 Sync Bot going to sleep',
             );
         }
     } catch (err) {
@@ -502,10 +502,7 @@ To start watching a group, run:`);
 
         console.log('Waiting for new media messages...');
         try {
-            await client.sendMessage(
-                TARGET_GROUP_ID,
-                '🟢 powering on.. sync online',
-            );
+            await client.sendMessage(TARGET_GROUP_ID, '🤖 Sync Bot is online!');
         } catch (err) {
             console.error('Failed to send online message:', err);
         }
