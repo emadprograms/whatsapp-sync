@@ -506,14 +506,15 @@ client.on('message_create', async (msg) => {
     }
 
     if (msg.hasMedia) {
-        if (msg.id.fromMe && msg.body && groupFolder) {
-            const path = require('path');
-            const fs = require('fs');
-            const potentialEchoPath = path.join(groupFolder, msg.body);
-            if (fs.existsSync(potentialEchoPath)) {
-                console.log(`🔄 Ignoring echo of our own upload: ${msg.body}`);
-                return;
-            }
+        if (
+            msg.id.fromMe &&
+            manifest &&
+            manifest.getByMessageId(msg.id._serialized)
+        ) {
+            console.log(
+                `🔄 Ignoring echo of our own upload: ${msg.id._serialized}`,
+            );
+            return;
         }
         try {
             console.log(`Detected media from ${msg.from}. Downloading...`);
