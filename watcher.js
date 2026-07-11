@@ -22,7 +22,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // === CONFIGURATION ===
 // You can set this via environment variable: GROUP_ID=123456789@g.us node watcher.js
 const TARGET_GROUP_ID = process.env.GROUP_ID;
-const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
+const DOWNLOADS_DIR = path.join(__dirname, 'sync_download');
 
 let manifest = null;
 let isWatcherInitialized = false;
@@ -127,7 +127,7 @@ To start watching a group, run:`);
     } else {
         console.log(`Watching group: ${TARGET_GROUP_ID}`);
 
-        groupFolder = path.join(DOWNLOADS_DIR, TARGET_GROUP_ID.split('@')[0]);
+        groupFolder = DOWNLOADS_DIR;
         if (!fs.existsSync(groupFolder))
             fs.mkdirSync(groupFolder, { recursive: true });
         manifest = new SyncManifest(
