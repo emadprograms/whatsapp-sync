@@ -413,7 +413,14 @@ To start watching a group, run:`);
             const chokidar = await import('chokidar');
             const fsWatcher = chokidar.watch(groupFolder, {
                 ignoreInitial: true,
-                ignored: /.*\.tmp$|^sync-manifest\.json$|^skipped-files\.log$/,
+                ignored: (filePath) => {
+                    const base = path.basename(filePath);
+                    return (
+                        base.endsWith('.tmp') ||
+                        base === 'sync-manifest.json' ||
+                        base === 'skipped-files.log'
+                    );
+                },
                 ignorePermissionErrors: true,
                 awaitWriteFinish: {
                     stabilityThreshold: 2000,

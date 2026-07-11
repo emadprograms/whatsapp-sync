@@ -57,7 +57,23 @@ class SyncManifest {
         const tmpPath = this.manifestPath + '.tmp';
 
         fs.writeFileSync(tmpPath, json, 'utf8');
-        fs.renameSync(tmpPath, this.manifestPath);
+
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_MS = 100;
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                fs.renameSync(tmpPath, this.manifestPath);
+                return;
+            } catch (err) {
+                if (attempt >= MAX_RETRIES) {
+                    throw err;
+                }
+                const start = Date.now();
+                while (Date.now() - start < RETRY_DELAY_MS) {
+                    // busy-wait for retry delay (sync context)
+                }
+            }
+        }
     }
 
     set(filename, messageId) {
