@@ -355,13 +355,16 @@ To start watching a group, run:`);
                     const media = await msg.downloadMedia();
                     if (media) {
                         let baseFilename = media.filename;
+                        const mime = require('mime');
+                        const mimetypeStr = media.mimetype
+                            ? media.mimetype.split(';')[0]
+                            : '';
+                        const ext = mime.getExtension(mimetypeStr) || 'bin';
+
                         if (!baseFilename) {
-                            const mime = require('mime');
-                            const mimetypeStr = media.mimetype
-                                ? media.mimetype.split(';')[0]
-                                : '';
-                            const ext = mime.getExtension(mimetypeStr) || 'bin';
                             baseFilename = `download.${ext}`;
+                        } else if (!baseFilename.includes('.')) {
+                            baseFilename = `${baseFilename}.${ext}`;
                         }
 
                         const uniqueId = msg.id.id.slice(-5);
@@ -574,13 +577,16 @@ client.on('message_create', async (msg) => {
                 }
 
                 let baseFilename = media.filename;
+                const mime = require('mime');
+                const mimetypeStr = media.mimetype
+                    ? media.mimetype.split(';')[0]
+                    : '';
+                const ext = mime.getExtension(mimetypeStr) || 'bin';
+
                 if (!baseFilename) {
-                    const mime = require('mime');
-                    const mimetypeStr = media.mimetype
-                        ? media.mimetype.split(';')[0]
-                        : '';
-                    const ext = mime.getExtension(mimetypeStr) || 'bin';
                     baseFilename = `download.${ext}`;
+                } else if (!baseFilename.includes('.')) {
+                    baseFilename = `${baseFilename}.${ext}`;
                 }
 
                 const uniqueId = msg.id.id.slice(-5);
