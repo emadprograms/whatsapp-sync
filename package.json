@@ -1,9 +1,8 @@
 {
-    "name": "whatsapp-web.js",
-    "version": "1.34.7",
-    "description": "A Node.js library for interacting with WhatsApp Web",
-    "main": "./index.js",
-    "typings": "./index.d.ts",
+    "name": "whatsapp-sync",
+    "version": "1.0.0",
+    "description": "A tool to synchronize media between a WhatsApp group and a local filesystem",
+    "main": "./watcher.js",
     "scripts": {
         "test": "mocha tests --recursive --timeout 5000",
         "test-single": "mocha",
@@ -22,18 +21,11 @@
     },
     "keywords": [
         "whatsapp",
-        "whatsapp-web",
-        "api",
-        "bot",
-        "client",
-        "node"
+        "sync",
+        "bot"
     ],
-    "author": "Pedro Lopez",
-    "license": "Apache-2.0",
-    "bugs": {
-        "url": "https://github.com/wwebjs/whatsapp-web.js/issues"
-    },
-    "homepage": "https://wwebjs.dev/",
+    "author": "Emad",
+    "license": "MIT",
     "dependencies": {
         "chokidar": "^5.0.0",
         "fluent-ffmpeg": "2.1.3",
