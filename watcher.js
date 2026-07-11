@@ -162,6 +162,9 @@ To start watching a group, run:`);
                     );
                 } finally {
                     manifest.delete(filename);
+                    // Add a 1s delay because WhatsApp Web's internal anti-spam
+                    // will silently drop revocation requests if sent with 0ms delay.
+                    await new Promise((r) => setTimeout(r, 1000));
                 }
             }
             isProcessingDeleteQueue = false;
