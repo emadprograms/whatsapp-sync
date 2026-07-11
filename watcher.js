@@ -51,6 +51,16 @@ const client = new Client({
 // Graceful shutdown: kill browser when user presses Ctrl+C
 process.on('SIGINT', async () => {
     console.log('\n🛑 Stopping watcher...');
+    try {
+        if (TARGET_GROUP_ID && isWatcherInitialized) {
+            await client.sendMessage(
+                TARGET_GROUP_ID,
+                'powering off.. sync offline',
+            );
+        }
+    } catch (err) {
+        console.error('Failed to send offline message:', err);
+    }
     process.exit(0);
 });
 
@@ -491,6 +501,14 @@ To start watching a group, run:`);
         }
 
         console.log('Waiting for new media messages...');
+        try {
+            await client.sendMessage(
+                TARGET_GROUP_ID,
+                'powering on.. sync online',
+            );
+        } catch (err) {
+            console.error('Failed to send online message:', err);
+        }
     }
 });
 
