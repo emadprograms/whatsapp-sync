@@ -28,6 +28,7 @@ let manifest = null;
 let isWatcherInitialized = false;
 let groupFolder = null;
 const pendingUploadIds = new Set(); // tracks in-flight bot uploads for echo prevention
+const uploadingFiles = new Set(); // Tracks captions/filenames actively being uploaded
 
 if (!fs.existsSync(DOWNLOADS_DIR)) {
     fs.mkdirSync(DOWNLOADS_DIR);
@@ -207,6 +208,7 @@ To start watching a group, run:`);
 
                     while (attempts < MAX_RETRIES && !success) {
                         try {
+                            uploadingFiles.add(filename);
                             const sentMsg = await client.sendMessage(
                                 TARGET_GROUP_ID,
                                 media,
@@ -246,6 +248,10 @@ To start watching a group, run:`);
                             await new Promise((r) =>
                                 setTimeout(r, Math.pow(2, attempts) * 1000),
                             );
+                        } finally {
+                            if (success || attempts >= MAX_RETRIES) {
+                                uploadingFiles.delete(filename);
+                            }
                         }
                     }
                     consecutiveUploads++;
@@ -556,11 +562,14 @@ client.on('message_create', async (msg) => {
     }
 
     if (msg.hasMedia) {
-        // Delay processing of outgoing messages slightly to allow
-        // the sendMessage promise in processUploadQueue to resolve
-        // and populate pendingUploadIds, fixing the echo race condition.
-        if (msg.id.fromMe) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Deterministic guard for the exact window of the upload race condition.
+        // If an echo arrives while we are awaiting sendMessage(), its caption
+        // will exactly match the filename in uploadingFiles.
+        if (msg.id.fromMe && msg.body && uploadingFiles.has(msg.body)) {
+            console.log(
+                `🔄 Ignoring echo of actively uploading file: ${msg.body}`,
+            );
+            return;
         }
 
         if (
