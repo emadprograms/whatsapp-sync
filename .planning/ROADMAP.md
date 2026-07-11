@@ -1,13 +1,20 @@
-# Milestone v1.1 Roadmap
+# Roadmap: WhatsApp Watcher
 
-## Phase 02: Local to WhatsApp Upload
-**Goal:** Implement two-way sync — local file additions upload to WhatsApp, local deletions revoke WA messages, WA deletions delete local files, offline changes reconcile on startup
-**Requirements:** TWO-WAY-SYNC
-**Status:** Completed
-**Success Criteria:**
-- Files placed in the local folder are uploaded to WhatsApp with filename as caption
-- Deleting a local file revokes the corresponding WhatsApp message
-- Revoking a WhatsApp message deletes the corresponding local file
-- Offline changes (additions, deletions, revocations) are reconciled on startup
-- Upload rate limiting prevents WhatsApp bans
-- Large files (>64MB) are skipped gracefully
+## Milestones
+
+- ✅ **v1.1 Local to WhatsApp Upload** — Phase 02 (shipped 2026-07-11)
+
+## Phases
+
+<details>
+<summary>✅ v1.1 Local to WhatsApp Upload (Phase 02) — SHIPPED 2026-07-11</summary>
+
+- [x] Phase 02: Local to WhatsApp Upload (3/3 plans) — completed 2026-07-11
+
+</details>
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+| --- | --- | --- | --- | --- |
+| 02. Local to WhatsApp Upload | v1.1 | 3/3 | Complete | 2026-07-11 |

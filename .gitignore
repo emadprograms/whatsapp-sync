@@ -82,4 +82,4 @@ typings/
 .gemini/
 .agents/
 .planning/
-downloads/
+sync_download/
