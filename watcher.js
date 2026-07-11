@@ -556,6 +556,13 @@ client.on('message_create', async (msg) => {
     }
 
     if (msg.hasMedia) {
+        // Delay processing of outgoing messages slightly to allow
+        // the sendMessage promise in processUploadQueue to resolve
+        // and populate pendingUploadIds, fixing the echo race condition.
+        if (msg.id.fromMe) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
         if (
             msg.id.fromMe &&
             (pendingUploadIds.has(msg.id._serialized) ||
