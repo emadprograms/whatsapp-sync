@@ -139,6 +139,11 @@ To start watching a group, run:`);
             while (deleteQueue.length > 0) {
                 const filename = deleteQueue.shift();
                 const messageId = manifest.getByFilename(filename);
+                if (!messageId) {
+                    // Already cleaned from manifest (e.g. by startup reverse-check) — skip
+                    manifest.delete(filename);
+                    continue;
+                }
                 try {
                     const msg = await client.getMessageById(messageId);
                     if (msg) {
@@ -196,9 +201,26 @@ To start watching a group, run:`);
                                     caption: filename,
                                 },
                             );
-                            manifest.set(filename, sentMsg.id._serialized);
-                            pendingUploadIds.add(sentMsg.id._serialized);
-                            console.log('✅ Uploaded:', filename);
+                            // Rename local file to match download naming convention
+                            // (uniqueId_filename) so existsSync guard blocks any echo download
+                            const uniquePrefix = sentMsg.id.id.slice(-5);
+                            const newFilename = `${uniquePrefix}_${filename}`;
+                            const newFilePath = path.join(
+                                groupFolder,
+                                newFilename,
+                            );
+                            try {
+                                fs.renameSync(filePath, newFilePath);
+                            } catch (renameErr) {
+                                console.warn(
+                                    `⚠️ Could not rename ${filename} to ${newFilename}:`,
+                                    renameErr.message,
+                                );
+                            }
+                            manifest.set(newFilename, sentMsg.id._serialized);
+                            console.log(
+                                `✅ Uploaded: ${filename} → saved as ${newFilename}`,
+                            );
                             success = true;
                         } catch (uploadErr) {
                             attempts++;
@@ -546,6 +568,17 @@ client.on('message_create', async (msg) => {
                 const uniqueId = msg.id.id.slice(-5);
                 const filename = `${uniqueId}_${baseFilename}`;
                 const filePath = path.join(groupFolder, filename);
+
+                // Skip if already present locally (echo from our own upload)
+                if (
+                    fs.existsSync(filePath) ||
+                    (manifest && manifest.has(filename))
+                ) {
+                    console.log(
+                        `⏭️ Skipping already-present file: ${filename}`,
+                    );
+                    return;
+                }
 
                 fs.writeFileSync(filePath + '.tmp', media.data, {
                     encoding: 'base64',
