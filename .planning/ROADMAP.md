@@ -1,20 +1,14 @@
-# Roadmap: WhatsApp Watcher
+# Roadmap: whatsapp-sync
 
-## Milestones
+## Phase 1: watcher.js Simplification
 
-- ✅ **v1.1 Local to WhatsApp Upload** — Phase 02 (shipped 2026-07-11)
+Rewrite `watcher.js` to implement the new unidirectional sync pipelines, dropping complex sync folder features and replacing them with simple "send me" -> `in` and `out` -> "receive me" transfers. Update `watcher.js` tests as well.
 
-## Phases
-
-<details>
-<summary>✅ v1.1 Local to WhatsApp Upload (Phase 02) — SHIPPED 2026-07-11</summary>
-
-- [x] Phase 02: Local to WhatsApp Upload (3/3 plans) — completed 2026-07-11
-
-</details>
-
-## Progress
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-| --- | --- | --- | --- | --- |
-| 02. Local to WhatsApp Upload | v1.1 | 3/3 | Complete | 2026-07-11 |
+**Covered Requirements:**
+- SYNC-01
+- SYNC-02
+- SYNC-03
+- SYNC-04
+- SYNC-05
+- SYNC-06
+- SYNC-07
