@@ -317,7 +317,56 @@ client.on('message_create', async (msg) => {
     }
 });
 
-client.initialize();
+const { exec } = require('child_process');
+
+async function startClient() {
+    try {
+        await client.initialize();
+    } catch (err) {
+        if (err.message.includes('browser is already running')) {
+            console.log(
+                '\n⚠️ Orphaned browser session detected! Cleaning up background processes...',
+            );
+
+            // Delete the lockfile if it exists
+            const lockPath = path.join(
+                __dirname,
+                '.wwebjs_auth',
+                'session',
+                'SingletonLock',
+            );
+            if (fs.existsSync(lockPath)) {
+                try {
+                    fs.unlinkSync(lockPath);
+                } catch (ignoredError) {
+                    /* ignore */
+                }
+            }
+
+            // Kill orphaned headless Chrome processes tied to this project
+            exec(
+                `wmic process where "name='chrome.exe' and commandline like '%whatsapp-sync%'" call terminate`,
+                async () => {
+                    console.log(
+                        '✅ Cleanup complete. Retrying WhatsApp connection...\n',
+                    );
+                    try {
+                        await client.initialize();
+                    } catch (retryErr) {
+                        console.error(
+                            '❌ Failed to initialize after cleanup:',
+                            retryErr,
+                        );
+                    }
+                },
+            );
+        } else {
+            console.error('❌ Fatal error starting client:', err);
+        }
+    }
+}
+
+startClient();
 
 // --- GRACEFUL SHUTDOWN ---
 // This ensures that when you stop the script (Ctrl+C), it properly closes
