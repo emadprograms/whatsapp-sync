@@ -245,6 +245,44 @@ client.on('ready', async () => {
     });
 });
 
+// === DELETION QUEUE FOR BULK MESSAGES ===
+const incomingDeletionQueue = [];
+let isProcessingDeletions = false;
+
+async function processDeletions() {
+    if (isProcessingDeletions) return;
+    isProcessingDeletions = true;
+
+    while (incomingDeletionQueue.length > 0) {
+        const msgId = incomingDeletionQueue.shift();
+        try {
+            const msgToDel = await client.getMessageById(msgId);
+            if (msgToDel) {
+                await msgToDel.delete(true);
+                console.log(`🗑️ Revoked queued message for everyone`);
+            } else {
+                console.warn(`⚠️ Could not fetch queued message to delete.`);
+            }
+        } catch (ignoredError) {
+            try {
+                const msgToDel = await client.getMessageById(msgId);
+                if (msgToDel) await msgToDel.delete(false);
+                console.log(`🗑️ Deleted queued message for me`);
+            } catch (delMeErr) {
+                console.warn(
+                    `⚠️ Could not delete queued message:`,
+                    delMeErr.message,
+                );
+            }
+        }
+
+        // Wait 2.5 seconds between deletions to strictly avoid WhatsApp rate limits
+        await new Promise((r) => setTimeout(r, 2500));
+    }
+
+    isProcessingDeletions = false;
+}
+
 client.on('message_create', async (msg) => {
     // Only process messages in the "send me" group
     if (msg.from !== sendMeGroupId && msg.to !== sendMeGroupId) {
@@ -279,37 +317,10 @@ client.on('message_create', async (msg) => {
                 fs.writeFileSync(filePath, media.data, { encoding: 'base64' });
                 console.log(`✅ Saved to IN_DIR: ${filePath}`);
 
-                // Wait 1 second to ensure it's fully registered before deleting
-                await new Promise((r) => setTimeout(r, 1000));
-
-                try {
-                    const msgToDel = await client.getMessageById(
-                        msg.id._serialized,
-                    );
-                    if (msgToDel) {
-                        await msgToDel.delete(true);
-                        console.log(
-                            `🗑️ Revoked message for everyone from WhatsApp`,
-                        );
-                    } else {
-                        console.warn(
-                            `⚠️ Could not fetch message by ID to delete it.`,
-                        );
-                    }
-                } catch (ignoredError) {
-                    try {
-                        const msgToDel = await client.getMessageById(
-                            msg.id._serialized,
-                        );
-                        if (msgToDel) await msgToDel.delete(false);
-                        console.log(`🗑️ Deleted message for me from WhatsApp`);
-                    } catch (delMeErr) {
-                        console.warn(
-                            `⚠️ Could not delete message from WhatsApp:`,
-                            delMeErr.message,
-                        );
-                    }
-                }
+                // Queue the message for deletion instead of deleting it immediately
+                // This prevents rate limits when 60+ images are sent at once!
+                incomingDeletionQueue.push(msg.id._serialized);
+                processDeletions();
             }
         } catch (err) {
             console.error('❌ Failed to process incoming media:', err);
