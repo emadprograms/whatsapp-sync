@@ -77,6 +77,24 @@ function getMessageMedia(msg) {
 const deletionQueue = [];
 let isProcessingDeletions = false;
 
+// Strict file whitelist for both inbound and outbound
+const ALLOWED_EXTENSIONS = new Set([
+    // Images
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp',
+    // Documents
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.rtf',
+    // Video
+    '.mp4', '.avi', '.mov', '.mkv', '.webm',
+    // Audio
+    '.mp3', '.wav', '.ogg', '.m4a'
+]);
+
+function isAllowedFile(filename) {
+    if (!filename || filename.startsWith('.')) return false;
+    const ext = path.extname(filename).toLowerCase();
+    return ALLOWED_EXTENSIONS.has(ext);
+}
+
 async function processDeletionQueue() {
     if (isProcessingDeletions) return;
     isProcessingDeletions = true;
@@ -170,10 +188,20 @@ async function startClient() {
                             }
                         );
 
+                        // Generate a unique filename based on the message ID or timestamp
+                        const ext = mime.getExtension(mediaData.content.mimetype || '') || 'bin';
+                        
+                        if (!isAllowedFile('dummy.' + ext)) {
+                            console.log(`⚠️ Ignoring unsupported inbound file type: .${ext}`);
+                            // Delete the unsupported message so it doesn't pile up
+                            deletionQueue.push(msg.key);
+                            processDeletionQueue();
+                            return;
+                        }
+
                         if (buffer) {
-                            const mimetypeStr = mediaData.content.mimetype || '';
-                            const ext = mime.getExtension(mimetypeStr.split(';')[0]) || 'bin';
-                            let baseFilename = mediaData.content.fileName || `download_${msg.key.id.slice(-5)}.${ext}`;
+                            const uniqueId = msg.key.id ? msg.key.id.slice(-5) : Date.now();
+                            let baseFilename = mediaData.content.fileName || `download_${uniqueId}.${ext}`;
 
                             let filePath = path.join(IN_DIR, baseFilename);
                             if (fs.existsSync(filePath)) {
@@ -229,7 +257,11 @@ function setupPostConnectionLogic() {
     // Process offline files currently in OUT_DIR
     const files = fs.readdirSync(OUT_DIR);
     for (const file of files) {
-        if (file.startsWith('.') || file.endsWith('.tmp')) continue;
+        if (!isAllowedFile(file)) {
+            // Delete ignored garbage files that are polluting OUT_DIR
+            try { fs.unlinkSync(path.join(OUT_DIR, file)); } catch(e) {}
+            continue;
+        }
         console.log(`🔍 Found offline file to queue: ${file}`);
         outboundQueue.push({ filePath: path.join(OUT_DIR, file), filename: file });
     }
@@ -245,9 +277,14 @@ function setupPostConnectionLogic() {
         },
     });
 
+    // Watch for new files added to OUT_DIR
     chokidarWatcher.on('add', (filePath) => {
         const filename = path.basename(filePath);
-        if (filename.startsWith('.') || filename.endsWith('.tmp')) return;
+        if (!isAllowedFile(filename)) {
+            console.log(`🚫 Ignoring unsupported outbound file: ${filename}`);
+            try { fs.unlinkSync(filePath); } catch(e) {}
+            return;
+        }
         outboundQueue.push({ filePath, filename });
         processOutboundQueue();
     });

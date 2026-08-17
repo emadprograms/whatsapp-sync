@@ -166,22 +166,19 @@ test.describe.serial('True E2E WhatsApp Sync (Baileys)', () => {
         expect(fs.existsSync(testFilePath)).toBeFalsy();
     });
 
-    test('should ignore unsupported/temporary files (.tmp)', async () => {
+    test('should ignore non-whitelisted files like .done', async () => {
         test.setTimeout(30000);
         
-        const testFileName = `test_ignored_${Date.now()}.tmp`;
+        const testFileName = `transfer_Outbound_${Date.now()}.done`;
         const testFilePath = path.join(OUT_DIR, testFileName);
         
-        fs.writeFileSync(testFilePath, 'dummy content');
+        fs.writeFileSync(testFilePath, 'dummy marker content');
 
         // Wait a few seconds for chokidar
         await new Promise(r => setTimeout(r, 5000));
         
-        // File should NOT have been deleted because it's ignored
-        expect(fs.existsSync(testFilePath)).toBeTruthy();
-        
-        // Cleanup
-        try { fs.unlinkSync(testFilePath); } catch (e) {}
+        // File should have been deleted by the whitelist scrubber because it's garbage
+        expect(fs.existsSync(testFilePath)).toBeFalsy();
     });
 
     test('should handle a blast of multiple files concurrently', async () => {
