@@ -12,3 +12,13 @@ Rewrite `watcher.js` to implement the new unidirectional sync pipelines, droppin
 - SYNC-05
 - SYNC-06
 - SYNC-07
+
+## Phase 2: Standalone NPM Package Migration
+
+Migrate the project structure to a standalone NPM project by cleaning up library source files and configuring dependencies.
+
+**Covered Requirements:**
+- PKG-01
+- PKG-02
+- PKG-03
+- PKG-04
