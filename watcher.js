@@ -237,6 +237,8 @@ function setupPostConnectionLogic() {
 
     chokidarWatcher = chokidar.watch(OUT_DIR, {
         ignoreInitial: true,
+        usePolling: true, // Use polling to bypass Windows strict file locks (EBUSY)
+        interval: 1000,
         awaitWriteFinish: {
             stabilityThreshold: 2000,
             pollInterval: 100,
@@ -248,6 +250,11 @@ function setupPostConnectionLogic() {
         if (filename.startsWith('.') || filename.endsWith('.tmp')) return;
         outboundQueue.push({ filePath, filename });
         processOutboundQueue();
+    });
+
+    // Handle EBUSY and other filesystem lock errors gracefully without crashing
+    chokidarWatcher.on('error', (error) => {
+        console.error('⚠️ Chokidar file watcher error (usually a temporary file lock):', error.message);
     });
 }
 
