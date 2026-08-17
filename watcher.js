@@ -83,10 +83,10 @@ client.on('ready', async () => {
     );
 
     sendMeGroupId = sendMeGroup
-        ? sendMeGroup.id._serialized
+        ? sendMeGroup.id._serialized || sendMeGroup.id.$1
         : process.env.GROUP_ID;
     receiveMeGroupId = receiveMeGroup
-        ? receiveMeGroup.id._serialized
+        ? receiveMeGroup.id._serialized || receiveMeGroup.id.$1
         : process.env.RECEIVE_GROUP_ID;
 
     if (!sendMeGroupId) {
@@ -95,7 +95,7 @@ client.on('ready', async () => {
         );
         console.log('Available groups:');
         groups.forEach((g) =>
-            console.log(` - ${g.name} (ID: ${g.id._serialized})`),
+            console.log(` - ${g.name} (ID: ${g.id._serialized || g.id.$1})`),
         );
         process.exit(1);
     }
@@ -146,7 +146,19 @@ client.on('ready', async () => {
     if (sendMeGroupId) {
         console.log(`🔍 Scanning "send me" group for missed media messages...`);
         try {
-            const chat = await client.getChatById(sendMeGroupId);
+            let chat = await client.getChatById(sendMeGroupId);
+            let retries = 10;
+            while (!chat && retries > 0) {
+                console.log(
+                    `⏳ Waiting for "send me" chat to be loaded by WhatsApp Web... (${retries} retries left)`,
+                );
+                await new Promise((r) => setTimeout(r, 2000));
+                chat = await client.getChatById(sendMeGroupId);
+                retries--;
+            }
+            if (!chat) {
+                throw new Error(`Could not get chat for ID: ${sendMeGroupId}`);
+            }
             const messages = await chat.fetchMessages({ limit: 100 });
             for (const msg of messages) {
                 if (msg.hasMedia) {
@@ -176,7 +188,7 @@ client.on('ready', async () => {
 
                         try {
                             const msgToDel = await client.getMessageById(
-                                msg.id._serialized,
+                                msg.id._serialized || msg.id.$1,
                             );
                             if (msgToDel) await msgToDel.delete(true);
                             console.log(
@@ -185,7 +197,7 @@ client.on('ready', async () => {
                         } catch (ignoredError) {
                             try {
                                 const msgToDel = await client.getMessageById(
-                                    msg.id._serialized,
+                                    msg.id._serialized || msg.id.$1,
                                 );
                                 if (msgToDel) await msgToDel.delete(false);
                                 console.log(`🗑️ Deleted missed message for me`);
@@ -284,8 +296,14 @@ async function processDeletions() {
 }
 
 client.on('message_create', async (msg) => {
+    console.log(
+        `[DEBUG] message_create fired! from: ${msg.from}, to: ${msg.to}, hasMedia: ${msg.hasMedia}`,
+    );
     // Only process messages in the "send me" group
     if (msg.from !== sendMeGroupId && msg.to !== sendMeGroupId) {
+        console.log(
+            `[DEBUG] Ignored message not for "send me" group (expected ${sendMeGroupId})`,
+        );
         return;
     }
 
@@ -319,7 +337,7 @@ client.on('message_create', async (msg) => {
 
                 // Queue the message for deletion instead of deleting it immediately
                 // This prevents rate limits when 60+ images are sent at once!
-                incomingDeletionQueue.push(msg.id._serialized);
+                incomingDeletionQueue.push(msg.id._serialized || msg.id.$1);
                 processDeletions();
             }
         } catch (err) {

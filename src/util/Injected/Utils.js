@@ -582,7 +582,7 @@ exports.LoadUtils = () => {
 
         return window
             .require('WAWebCollections')
-            .Msg.get(newMsgKey._serialized);
+            .Msg.get(newMsgKey._serialized || newMsgKey.$1);
     };
 
     window.WWebJS.editMessage = async (msg, content, options = {}) => {
@@ -625,7 +625,9 @@ exports.LoadUtils = () => {
         await window
             .require('WAWebSendMessageEditAction')
             .sendMessageEdit(msg, content, internalOptions);
-        return window.require('WAWebCollections').Msg.get(msg.id._serialized);
+        return window
+            .require('WAWebCollections')
+            .Msg.get(msg.id._serialized || msg.id.$1);
     };
 
     window.WWebJS.toStickerData = async (mediaInfo) => {
@@ -830,7 +832,7 @@ exports.LoadUtils = () => {
 
         if (typeof msg.id.remote === 'object') {
             msg.id = Object.assign({}, msg.id, {
-                remote: msg.id.remote._serialized,
+                remote: msg.id.remote._serialized || msg.id.remote.$1,
             });
         }
 
@@ -953,7 +955,7 @@ exports.LoadUtils = () => {
             model.isGroup = true;
             const chatWid = window
                 .require('WAWebWidFactory')
-                .createWid(chat.id._serialized);
+                .createWid(chat.id._serialized || chat.id.$1);
             const groupMetadata =
                 window.require('WAWebCollections').GroupMetadata ||
                 window.require('WAWebCollections').WAWebGroupMetadataCollection;
@@ -984,12 +986,16 @@ exports.LoadUtils = () => {
             const lastMessage = chat.lastReceivedKey
                 ? window
                       .require('WAWebCollections')
-                      .Msg.get(chat.lastReceivedKey._serialized) ||
+                      .Msg.get(
+                          chat.lastReceivedKey._serialized ||
+                              chat.lastReceivedKey.$1,
+                      ) ||
                   (
                       await window
                           .require('WAWebCollections')
                           .Msg.getMessagesById([
-                              chat.lastReceivedKey._serialized,
+                              chat.lastReceivedKey._serialized ||
+                                  chat.lastReceivedKey.$1,
                           ])
                   )?.messages?.[0]
                 : null;

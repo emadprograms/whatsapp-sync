@@ -117,7 +117,9 @@ class Contact extends Base {
      * @returns {Promise<string>}
      */
     async getProfilePicUrl() {
-        return await this.client.getProfilePicUrl(this.id._serialized);
+        return await this.client.getProfilePicUrl(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -125,7 +127,9 @@ class Contact extends Base {
      * @returns {Promise<string>}
      */
     async getFormattedNumber() {
-        return await this.client.getFormattedNumber(this.id._serialized);
+        return await this.client.getFormattedNumber(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -133,7 +137,9 @@ class Contact extends Base {
      * @returns {Promise<string>}
      */
     async getCountryCode() {
-        return await this.client.getCountryCode(this.id._serialized);
+        return await this.client.getCountryCode(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -144,7 +150,7 @@ class Contact extends Base {
     async getChat() {
         if (this.isMe) return null;
 
-        return await this.client.getChatById(this.id._serialized);
+        return await this.client.getChatById(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -172,7 +178,7 @@ class Contact extends Base {
                 contact: ContactToBlock,
                 blockEntryPoint: 'ChatListBlock',
             });
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         this.isBlocked = true;
         return true;
@@ -196,12 +202,12 @@ class Contact extends Base {
 
                 contact = await window
                     .require('WAWebCollections')
-                    .Contact.find(lid._serialized);
+                    .Contact.find(lid._serialized || lid.$1);
             }
             await window
                 .require('WAWebBlockContactAction')
                 .unblockContact(contact, 'ChatListBlock');
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         this.isBlocked = false;
         return true;
@@ -217,7 +223,7 @@ class Contact extends Base {
             return window
                 .require('WAWebContactStatusBridge')
                 .getStatus({ token: '', wid: wid });
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         if (typeof about.status !== 'string') return null;
 
@@ -229,7 +235,9 @@ class Contact extends Base {
      * @returns {Promise<WAWebJS.ChatId[]>}
      */
     async getCommonGroups() {
-        return await this.client.getCommonGroups(this.id._serialized);
+        return await this.client.getCommonGroups(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -237,7 +245,9 @@ class Contact extends Base {
      * @returns {Promise<Broadcast>}
      */
     async getBroadcast() {
-        return await this.client.getBroadcastById(this.id._serialized);
+        return await this.client.getBroadcastById(
+            this.id._serialized || this.id.$1,
+        );
     }
 }
 

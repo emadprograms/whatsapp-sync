@@ -99,7 +99,11 @@ class Chat extends Base {
      * @returns {Promise<Message>} Message that was just sent
      */
     async sendMessage(content, options) {
-        return this.client.sendMessage(this.id._serialized, content, options);
+        return this.client.sendMessage(
+            this.id._serialized || this.id.$1,
+            content,
+            options,
+        );
     }
 
     /**
@@ -107,7 +111,7 @@ class Chat extends Base {
      * @returns {Promise<Boolean>} result
      */
     async sendSeen() {
-        return this.client.sendSeen(this.id._serialized);
+        return this.client.sendSeen(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -117,7 +121,7 @@ class Chat extends Base {
     async clearMessages() {
         return this.client.pupPage.evaluate((chatId) => {
             return window.WWebJS.sendClearChat(chatId);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -127,21 +131,21 @@ class Chat extends Base {
     async delete() {
         return this.client.pupPage.evaluate((chatId) => {
             return window.WWebJS.sendDeleteChat(chatId);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
      * Archives this chat
      */
     async archive() {
-        return this.client.archiveChat(this.id._serialized);
+        return this.client.archiveChat(this.id._serialized || this.id.$1);
     }
 
     /**
      * un-archives this chat
      */
     async unarchive() {
-        return this.client.unarchiveChat(this.id._serialized);
+        return this.client.unarchiveChat(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -149,7 +153,7 @@ class Chat extends Base {
      * @returns {Promise<boolean>} New pin state. Could be false if the max number of pinned chats was reached.
      */
     async pin() {
-        return this.client.pinChat(this.id._serialized);
+        return this.client.pinChat(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -157,7 +161,7 @@ class Chat extends Base {
      * @returns {Promise<boolean>} New pin state
      */
     async unpin() {
-        return this.client.unpinChat(this.id._serialized);
+        return this.client.unpinChat(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -167,7 +171,7 @@ class Chat extends Base {
      */
     async mute(unmuteDate) {
         const result = await this.client.muteChat(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             unmuteDate,
         );
         this.isMuted = result.isMuted;
@@ -180,7 +184,9 @@ class Chat extends Base {
      * @returns {Promise<{isMuted: boolean, muteExpiration: number}>}
      */
     async unmute() {
-        const result = await this.client.unmuteChat(this.id._serialized);
+        const result = await this.client.unmuteChat(
+            this.id._serialized || this.id.$1,
+        );
         this.isMuted = result.isMuted;
         this.muteExpiration = result.muteExpiration;
         return result;
@@ -190,7 +196,7 @@ class Chat extends Base {
      * Mark this chat as unread
      */
     async markUnread() {
-        return this.client.markChatUnread(this.id._serialized);
+        return this.client.markChatUnread(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -239,7 +245,7 @@ class Chat extends Base {
 
                 return msgs.map((m) => window.WWebJS.getMessageModel(m));
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             searchOptions,
         );
 
@@ -253,7 +259,7 @@ class Chat extends Base {
         return this.client.pupPage.evaluate((chatId) => {
             window.WWebJS.sendChatstate('typing', chatId);
             return true;
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -263,7 +269,7 @@ class Chat extends Base {
         return this.client.pupPage.evaluate((chatId) => {
             window.WWebJS.sendChatstate('recording', chatId);
             return true;
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -273,7 +279,7 @@ class Chat extends Base {
         return this.client.pupPage.evaluate((chatId) => {
             window.WWebJS.sendChatstate('stop', chatId);
             return true;
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -281,7 +287,9 @@ class Chat extends Base {
      * @returns {Promise<Contact>}
      */
     async getContact() {
-        return await this.client.getContactById(this.id._serialized);
+        return await this.client.getContactById(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -289,7 +297,7 @@ class Chat extends Base {
      * @returns {Promise<Array<Label>>}
      */
     async getLabels() {
-        return this.client.getChatLabels(this.id._serialized);
+        return this.client.getChatLabels(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -298,7 +306,9 @@ class Chat extends Base {
      * @returns {Promise<void>}
      */
     async changeLabels(labelIds) {
-        return this.client.addOrRemoveLabels(labelIds, [this.id._serialized]);
+        return this.client.addOrRemoveLabels(labelIds, [
+            this.id._serialized || this.id.$1,
+        ]);
     }
 
     /**
@@ -306,7 +316,7 @@ class Chat extends Base {
      * @returns {Promise<Array<Message>>}
      */
     async getPinnedMessages() {
-        return this.client.getPinnedMessages(this.id._serialized);
+        return this.client.getPinnedMessages(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -314,7 +324,7 @@ class Chat extends Base {
      * @return {Promise<boolean>} True if operation completed successfully, false otherwise.
      */
     async syncHistory() {
-        return this.client.syncHistory(this.id._serialized);
+        return this.client.syncHistory(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -326,7 +336,10 @@ class Chat extends Base {
     async addOrEditCustomerNote(note) {
         if (this.isGroup || this.isChannel) return;
 
-        return this.client.addOrEditCustomerNote(this.id._serialized, note);
+        return this.client.addOrEditCustomerNote(
+            this.id._serialized || this.id.$1,
+            note,
+        );
     }
 
     /**
@@ -344,7 +357,7 @@ class Chat extends Base {
     async getCustomerNote() {
         if (this.isGroup || this.isChannel) return null;
 
-        return this.client.getCustomerNote(this.id._serialized);
+        return this.client.getCustomerNote(this.id._serialized || this.id.$1);
     }
 }
 

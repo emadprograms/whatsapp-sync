@@ -53,7 +53,7 @@ class Broadcast extends Base {
      * @returns {Promise<Chat>}
      */
     getChat() {
-        return this.client.getChatById(this.id._serialized);
+        return this.client.getChatById(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -61,7 +61,7 @@ class Broadcast extends Base {
      * @returns {Promise<Contact>}
      */
     getContact() {
-        return this.client.getContactById(this.id._serialized);
+        return this.client.getContactById(this.id._serialized || this.id.$1);
     }
 }
 

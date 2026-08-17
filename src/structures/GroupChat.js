@@ -156,7 +156,7 @@ class GroupChat extends Chat {
                 };
 
                 for (let pWid of participantWids) {
-                    const pId = pWid._serialized;
+                    const pId = pWid._serialized || pWid.$1;
                     pWid =
                         pWid.server === 'lid'
                             ? window
@@ -170,7 +170,11 @@ class GroupChat extends Chat {
                         isInviteV4Sent: false,
                     };
 
-                    if (groupParticipants.some((p) => p._serialized === pId)) {
+                    if (
+                        groupParticipants.some(
+                            (p) => (p._serialized || p.$1) === pId,
+                        )
+                    ) {
                         participantData[pId].code = 409;
                         participantData[pId].message = errorCodes[409];
                         continue;
@@ -223,7 +227,7 @@ class GroupChat extends Chat {
                                 .require('WAWebChatSendMessages')
                                 .sendGroupInviteMessage(
                                     userChat,
-                                    group.id._serialized,
+                                    group.id._serialized || group.id.$1,
                                     groupName,
                                     rpcResult.inviteV4Code,
                                     rpcResult.inviteV4CodeExp,
@@ -249,7 +253,7 @@ class GroupChat extends Chat {
 
                 return participantData;
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             participantIds,
             options,
         );
@@ -288,7 +292,7 @@ class GroupChat extends Chat {
                     .removeParticipants(chat, participants);
                 return { status: 200 };
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             participantIds,
         );
     }
@@ -326,7 +330,7 @@ class GroupChat extends Chat {
                     .promoteParticipants(chat, participants);
                 return { status: 200 };
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             participantIds,
         );
     }
@@ -364,7 +368,7 @@ class GroupChat extends Chat {
                     .demoteParticipants(chat, participants);
                 return { status: 200 };
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             participantIds,
         );
     }
@@ -390,7 +394,7 @@ class GroupChat extends Chat {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             subject,
         );
 
@@ -430,7 +434,7 @@ class GroupChat extends Chat {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             description,
         );
 
@@ -464,7 +468,7 @@ class GroupChat extends Chat {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             adminsOnly,
         );
 
@@ -500,7 +504,7 @@ class GroupChat extends Chat {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             adminsOnly,
         );
 
@@ -531,7 +535,7 @@ class GroupChat extends Chat {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             adminsOnly,
         );
 
@@ -548,7 +552,7 @@ class GroupChat extends Chat {
     async deletePicture() {
         const success = await this.client.pupPage.evaluate((chatid) => {
             return window.WWebJS.deletePicture(chatid);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         return success;
     }
@@ -563,7 +567,7 @@ class GroupChat extends Chat {
             (chatid, media) => {
                 return window.WWebJS.setPicture(chatid, media);
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             media,
         );
 
@@ -584,7 +588,7 @@ class GroupChat extends Chat {
                 if (err.name === 'ServerStatusCodeError') return undefined;
                 throw err;
             }
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         return codeRes?.code ? codeRes?.code : codeRes;
     }
@@ -599,7 +603,7 @@ class GroupChat extends Chat {
             return window
                 .require('WAWebGroupQueryJob')
                 .resetGroupInviteCode(chatWid);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         return codeRes.code;
     }
@@ -620,7 +624,7 @@ class GroupChat extends Chat {
      */
     async getGroupMembershipRequests() {
         return await this.client.getGroupMembershipRequests(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
         );
     }
 
@@ -646,7 +650,7 @@ class GroupChat extends Chat {
      */
     async approveGroupMembershipRequests(options = {}) {
         return await this.client.approveGroupMembershipRequests(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             options,
         );
     }
@@ -658,7 +662,7 @@ class GroupChat extends Chat {
      */
     async rejectGroupMembershipRequests(options = {}) {
         return await this.client.rejectGroupMembershipRequests(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             options,
         );
     }
@@ -673,7 +677,7 @@ class GroupChat extends Chat {
                 getAsModel: false,
             });
             return window.require('WAWebExitGroupAction').sendExitGroup(chat);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 }
 

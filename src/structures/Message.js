@@ -75,7 +75,7 @@ class Message extends Base {
          */
         this.from =
             typeof data.from === 'object' && data.from !== null
-                ? data.from._serialized
+                ? data.from._serialized || data.from.$1
                 : data.from;
 
         /**
@@ -87,7 +87,7 @@ class Message extends Base {
          */
         this.to =
             typeof data.to === 'object' && data.to !== null
-                ? data.to._serialized
+                ? data.to._serialized || data.to.$1
                 : data.to;
 
         /**
@@ -96,7 +96,7 @@ class Message extends Base {
          */
         this.author =
             typeof data.author === 'object' && data.author !== null
-                ? data.author._serialized
+                ? data.author._serialized || data.author.$1
                 : data.author;
 
         /**
@@ -212,12 +212,12 @@ class Message extends Base {
                       fromId:
                           typeof data.from === 'object' &&
                           '_serialized' in data.from
-                              ? data.from._serialized
+                              ? data.from._serialized || data.from.$1
                               : data.from,
                       toId:
                           typeof data.to === 'object' &&
                           '_serialized' in data.to
-                              ? data.to._serialized
+                              ? data.to._serialized || data.to.$1
                               : data.to,
                   }
                 : undefined;
@@ -365,7 +365,7 @@ class Message extends Base {
                 )?.messages?.[0];
             if (!msg) return null;
             return window.WWebJS.getMessageModel(msg);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         if (!newData) return null;
 
@@ -406,7 +406,7 @@ class Message extends Base {
             this.mentionedIds.map(
                 async (m) =>
                     await this.client.getContactById(
-                        typeof m === 'string' ? m : m._serialized,
+                        typeof m === 'string' ? m : m._serialized || m.$1,
                     ),
             ),
         );
@@ -420,7 +420,9 @@ class Message extends Base {
         return await Promise.all(
             this.groupMentions.map(
                 async (m) =>
-                    await this.client.getChatById(m.groupJid._serialized),
+                    await this.client.getChatById(
+                        m.groupJid._serialized || m.groupJid.$1,
+                    ),
             ),
         );
     }
@@ -444,7 +446,7 @@ class Message extends Base {
                 .require('WAWebQuotedMsgModelUtils')
                 .getQuotedMsgObj(msg);
             return window.WWebJS.getMessageModel(quotedMsg);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         return new Message(this.client, quotedMsg);
     }
@@ -466,7 +468,7 @@ class Message extends Base {
 
         options = {
             ...options,
-            quotedMessageId: this.id._serialized,
+            quotedMessageId: this.id._serialized || this.id.$1,
         };
 
         return this.client.sendMessage(chatId, content, options);
@@ -478,7 +480,10 @@ class Message extends Base {
      * @return {Promise}
      */
     async react(reaction) {
-        return this.client.sendReaction(this.id._serialized, reaction);
+        return this.client.sendReaction(
+            this.id._serialized || this.id.$1,
+            reaction,
+        );
     }
 
     /**
@@ -496,13 +501,14 @@ class Message extends Base {
      * @returns {Promise}
      */
     async forward(chat) {
-        const chatId = typeof chat === 'string' ? chat : chat.id._serialized;
+        const chatId =
+            typeof chat === 'string' ? chat : chat.id._serialized || chat.id.$1;
 
         await this.client.pupPage.evaluate(
             async (msgId, chatId) => {
                 return window.WWebJS.forwardMessage(chatId, msgId);
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             chatId,
         );
     }
@@ -527,7 +533,7 @@ class Message extends Base {
                 filename: resolved.filename,
                 filesize: resolved.filesize,
             };
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         if (!result) return undefined;
         return new MessageMedia(
@@ -552,7 +558,7 @@ class Message extends Base {
                 const result = await window.WWebJS.resolveMediaBlob(msgId);
                 return result?.blob ?? null;
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
         );
 
         let metadata;
@@ -566,7 +572,7 @@ class Message extends Base {
                     filename: msg?.filename,
                     filesize: msg?.size,
                 };
-            }, this.id._serialized);
+            }, this.id._serialized || this.id.$1);
         } catch (err) {
             await blobHandle.dispose().catch(() => {});
             throw err;
@@ -661,7 +667,7 @@ class Message extends Base {
                       )
                     : Cmd.sendDeleteMsgs(chat, [msg], clearMedia);
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             everyone,
             clearMedia,
         );
@@ -687,7 +693,7 @@ class Message extends Base {
                     .require('WAWebCmd')
                     .Cmd.sendStarMsgs(chat, [msg], false);
             }
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -710,7 +716,7 @@ class Message extends Base {
                     .require('WAWebCmd')
                     .Cmd.sendUnstarMsgs(chat, [msg], false);
             }
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -727,7 +733,7 @@ class Message extends Base {
                     duration,
                 );
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             duration,
         );
     }
@@ -739,7 +745,7 @@ class Message extends Base {
     async unpin() {
         return await this.client.pupPage.evaluate(async (msgId) => {
             return await window.WWebJS.pinUnpinMsgAction(msgId, 2, 0);
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
     }
 
     /**
@@ -783,7 +789,7 @@ class Message extends Base {
                         0,
                 );
             });
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         return info;
     }
@@ -824,7 +830,7 @@ class Message extends Base {
                     )?.messages?.[0];
                 if (!msg) return null;
                 return msg.serialize();
-            }, this.id._serialized);
+            }, this.id._serialized || this.id.$1);
             return new Payment(this.client, msg);
         }
         return undefined;
@@ -854,7 +860,7 @@ class Message extends Base {
                 .Reactions.find(msgId);
             if (!msgReactions || !msgReactions.reactions.length) return null;
             return msgReactions.reactions.serialize();
-        }, this.id._serialized);
+        }, this.id._serialized || this.id.$1);
 
         if (!reactions) {
             return undefined;
@@ -888,7 +894,7 @@ class Message extends Base {
                     'Mentions with an array of Contact are now deprecated. See more at https://github.com/wwebjs/whatsapp-web.js/pull/2166.',
                 );
                 options.mentions = options.mentions.map(
-                    (a) => a.id._serialized,
+                    (a) => a.id._serialized || a.id.$1,
                 );
             }
         }
@@ -935,7 +941,7 @@ class Message extends Base {
                 }
                 return null;
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             content,
             internalOptions,
         );
@@ -984,10 +990,10 @@ class Message extends Base {
                     .sendEventEditMessage(eventOptions, msg);
                 const editedMsg = window
                     .require('WAWebCollections')
-                    .Msg.get(msg.id._serialized);
+                    .Msg.get(msg.id._serialized || msg.id.$1);
                 return editedMsg?.serialize();
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             editedEventObject,
         );
 
@@ -999,7 +1005,9 @@ class Message extends Base {
      * @returns {Promise<PollVote[]>}
      */
     async getPollVotes() {
-        return await this.client.getPollVotes(this.id._serialized);
+        return await this.client.getPollVotes(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -1035,7 +1043,7 @@ class Message extends Base {
                     .require('WAWebPollsSendVoteMsgAction')
                     .sendVote(msg, localIdSet);
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             selectedOptions,
         );
     }

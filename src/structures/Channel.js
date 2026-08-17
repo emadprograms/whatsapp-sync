@@ -126,7 +126,7 @@ class Channel extends Base {
                     })),
                 );
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             limit,
         );
     }
@@ -237,7 +237,11 @@ class Channel extends Base {
      * @returns {Promise<Message>} Message that was just sent
      */
     async sendMessage(content, options) {
-        return this.client.sendMessage(this.id._serialized, content, options);
+        return this.client.sendMessage(
+            this.id._serialized || this.id.$1,
+            content,
+            options,
+        );
     }
 
     /**
@@ -245,7 +249,7 @@ class Channel extends Base {
      * @returns {Promise<boolean>}
      */
     async sendSeen() {
-        return this.client.sendSeen(this.id._serialized);
+        return this.client.sendSeen(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -262,7 +266,7 @@ class Channel extends Base {
     async sendChannelAdminInvite(chatId, options = {}) {
         return this.client.sendChannelAdminInvite(
             chatId,
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             options,
         );
     }
@@ -272,7 +276,9 @@ class Channel extends Base {
      * @returns {Promise<boolean>} Returns true if the operation completed successfully, false otherwise
      */
     async acceptChannelAdminInvite() {
-        return this.client.acceptChannelAdminInvite(this.id._serialized);
+        return this.client.acceptChannelAdminInvite(
+            this.id._serialized || this.id.$1,
+        );
     }
 
     /**
@@ -282,7 +288,7 @@ class Channel extends Base {
      */
     async revokeChannelAdminInvite(userId) {
         return this.client.revokeChannelAdminInvite(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             userId,
         );
     }
@@ -293,7 +299,10 @@ class Channel extends Base {
      * @returns {Promise<boolean>} Returns true if the operation completed successfully, false otherwise
      */
     async demoteChannelAdmin(userId) {
-        return this.client.demoteChannelAdmin(this.id._serialized, userId);
+        return this.client.demoteChannelAdmin(
+            this.id._serialized || this.id.$1,
+            userId,
+        );
     }
 
     /**
@@ -311,7 +320,7 @@ class Channel extends Base {
      */
     async transferChannelOwnership(newOwnerId, options = {}) {
         return this.client.transferChannelOwnership(
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             newOwnerId,
             options,
         );
@@ -366,7 +375,7 @@ class Channel extends Base {
 
                 return msgs.map((m) => window.WWebJS.getMessageModel(m));
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             searchOptions,
         );
 
@@ -378,7 +387,7 @@ class Channel extends Base {
      * @returns {Promise<boolean>} Returns true if the operation completed successfully, false otherwise
      */
     async deleteChannel() {
-        return this.client.deleteChannel(this.id._serialized);
+        return this.client.deleteChannel(this.id._serialized || this.id.$1);
     }
 
     /**
@@ -417,7 +426,7 @@ class Channel extends Base {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             value,
             property,
         );
@@ -455,7 +464,7 @@ class Channel extends Base {
                     throw err;
                 }
             },
-            this.id._serialized,
+            this.id._serialized || this.id.$1,
             action,
         );
     }
