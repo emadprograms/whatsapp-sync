@@ -8,7 +8,6 @@ const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const chokidar = require('chokidar');
 const mime = require('mime');
 const QRCode = require('qrcode');
 require('dotenv').config();
@@ -44,7 +43,7 @@ if (!sendMeGroupId || !receiveMeGroupId) {
 
 // Global socket reference
 let sock;
-let chokidarWatcher = null;
+let outboundPollingInterval = null;
 
 // Graceful shutdown
 async function gracefulShutdown() {
@@ -52,8 +51,8 @@ async function gracefulShutdown() {
     if (sock) {
         sock.ev.flush();
     }
-    if (chokidarWatcher) {
-        await chokidarWatcher.close();
+    if (outboundPollingInterval) {
+        clearInterval(outboundPollingInterval);
     }
     process.exit(0);
 }
@@ -243,56 +242,62 @@ async function processOutboundQueue() {
     isProcessingOutbound = false;
 }
 
+function isFileLocked(filePath) {
+    try {
+        // Try to open the file for reading and writing. If it's locked by Windows/Antivirus, this will throw EBUSY/EPERM.
+        const fd = fs.openSync(filePath, 'r+');
+        fs.closeSync(fd);
+        return false;
+    } catch (err) {
+        return true;
+    }
+}
+
+function startOutboundPolling() {
+    if (outboundPollingInterval) clearInterval(outboundPollingInterval);
+
+    console.log(`📂 Polling OUT_DIR for files: ${OUT_DIR}`);
+
+    outboundPollingInterval = setInterval(() => {
+        try {
+            const files = fs.readdirSync(OUT_DIR);
+            
+            for (const file of files) {
+                if (!isAllowedFile(file)) {
+                    // Delete ignored garbage files that are polluting OUT_DIR
+                    try { fs.unlinkSync(path.join(OUT_DIR, file)); } catch(e) {}
+                    continue;
+                }
+                
+                const filePath = path.join(OUT_DIR, file);
+                
+                // Check if the file is already in the queue to avoid duplicates
+                const isAlreadyQueued = outboundQueue.some(item => item.filename === file);
+                if (isAlreadyQueued) continue;
+
+                // Check if the OS still has the file locked (e.g., still copying, or antivirus scan)
+                if (isFileLocked(filePath)) {
+                    continue; // Skip it for now, we'll try again in the next tick
+                }
+                
+                console.log(`🔍 Picked up new file for upload: ${file}`);
+                outboundQueue.push({ filePath, filename: file });
+            }
+            
+            if (outboundQueue.length > 0) processOutboundQueue();
+            
+        } catch (error) {
+            console.error('⚠️ Error polling OUT_DIR:', error.message);
+        }
+    }, 3000); // Check every 3 seconds
+}
+
 function setupPostConnectionLogic() {
-    // We bind Chokidar ONLY after connection is fully established
     console.log(`✅ Bound to "send me" group: ${sendMeGroupId}`);
     console.log(`✅ Bound to "receive me" group: ${receiveMeGroupId}`);
-    console.log(`📂 Monitoring OUT_DIR: ${OUT_DIR}`);
     console.log(`📂 Saving to IN_DIR: ${IN_DIR}`);
 
-    if (chokidarWatcher) {
-        chokidarWatcher.close();
-    }
-
-    // Process offline files currently in OUT_DIR
-    const files = fs.readdirSync(OUT_DIR);
-    for (const file of files) {
-        if (!isAllowedFile(file)) {
-            // Delete ignored garbage files that are polluting OUT_DIR
-            try { fs.unlinkSync(path.join(OUT_DIR, file)); } catch(e) {}
-            continue;
-        }
-        console.log(`🔍 Found offline file to queue: ${file}`);
-        outboundQueue.push({ filePath: path.join(OUT_DIR, file), filename: file });
-    }
-    if (outboundQueue.length > 0) processOutboundQueue();
-
-    chokidarWatcher = chokidar.watch(OUT_DIR, {
-        ignoreInitial: true,
-        usePolling: true, // Use polling to bypass Windows strict file locks (EBUSY)
-        interval: 1000,
-        awaitWriteFinish: {
-            stabilityThreshold: 2000,
-            pollInterval: 100,
-        },
-    });
-
-    // Watch for new files added to OUT_DIR
-    chokidarWatcher.on('add', (filePath) => {
-        const filename = path.basename(filePath);
-        if (!isAllowedFile(filename)) {
-            console.log(`🚫 Ignoring unsupported outbound file: ${filename}`);
-            try { fs.unlinkSync(filePath); } catch(e) {}
-            return;
-        }
-        outboundQueue.push({ filePath, filename });
-        processOutboundQueue();
-    });
-
-    // Handle EBUSY and other filesystem lock errors gracefully without crashing
-    chokidarWatcher.on('error', (error) => {
-        console.error('⚠️ Chokidar file watcher error (usually a temporary file lock):', error.message);
-    });
+    startOutboundPolling();
 }
 
 // --- OUTBOUND SYNC HANDLER (OUT_DIR -> "receive me") ---
