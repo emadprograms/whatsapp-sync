@@ -220,15 +220,25 @@ test.describe.serial('True E2E WhatsApp Sync (Baileys)', () => {
     });
 
     test('should handle large files gracefully without crashing', async () => {
-        test.setTimeout(60000);
+        test.setTimeout(120000); // 2 minutes for 40MB
         
         const testFileName = `test_large_${Date.now()}.txt`;
         const testFilePath = path.join(OUT_DIR, testFileName);
         
-        const largeBuffer = Buffer.alloc(5 * 1024 * 1024, 'a');
-        fs.writeFileSync(testFilePath, largeBuffer);
+        // Simulate a slow file copy (streaming) to test chokidar's EBUSY polling resistance
+        const stream = fs.createWriteStream(testFilePath);
+        const chunkSize = 4 * 1024 * 1024; // 4MB chunks
+        const totalChunks = 10; // 40MB total
+        
+        for (let i = 0; i < totalChunks; i++) {
+            stream.write(Buffer.alloc(chunkSize, 'a'));
+            // Wait 200ms between chunks to keep the file locked by Node, mimicking a slow OS copy
+            await new Promise(r => setTimeout(r, 200));
+        }
+        
+        await new Promise(resolve => stream.end(resolve));
 
-        let retries = 40;
+        let retries = 60;
         while (fs.existsSync(testFilePath) && retries > 0) {
             await new Promise(r => setTimeout(r, 1000));
             retries--;
