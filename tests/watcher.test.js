@@ -5,8 +5,8 @@ const sinon = require('sinon');
 const fs = require('fs');
 const path = require('path');
 const EventEmitter = require('events');
-const proxyquire = require('proxyquire');
 const expect = chai.expect;
+const { startWatcher } = require('../watcher.js');
 
 describe('Watcher', function () {
     let mockClient;
@@ -36,7 +36,6 @@ describe('Watcher', function () {
         };
 
         mockFsWatcher = new EventEmitter();
-        mockFsWatcher.on = mockFsWatcher.on.bind(EventEmitter.prototype);
         chokidarMock = {
             watch: sinon.stub().returns(mockFsWatcher)
         };
@@ -70,14 +69,14 @@ describe('Watcher', function () {
     });
 
     it('should initialize and watch directories', async function () {
-        const watcher = proxyquire('../watcher', {
-            'whatsapp-web.js': {
+        const watcher = await startWatcher({
+            whatsapp: {
                 Client: sinon.stub().returns(mockClient),
                 LocalAuth: sinon.stub(),
                 MessageMedia: mockMessageMedia
             },
-            'chokidar': chokidarMock,
-            'fs': fs
+            chokidar: chokidarMock,
+            fs: fs
         });
 
         await mockClient.emit('ready');

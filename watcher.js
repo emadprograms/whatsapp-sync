@@ -1,9 +1,16 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const {
+    makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    downloadMediaMessage,
+} = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const chokidar = require('chokidar');
 const mime = require('mime');
+const QRCode = require('qrcode');
 require('dotenv').config();
 
 // === GLOBAL ERROR HANDLING ===
@@ -19,7 +26,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const basePath = path.join(
     process.env.USERPROFILE || process.env.HOME,
     'Documents',
-    'syncstaging',
+    'syncstaging'
 );
 const IN_DIR = path.join(basePath, 'in');
 const OUT_DIR = path.join(basePath, 'out');
@@ -27,200 +34,208 @@ const OUT_DIR = path.join(basePath, 'out');
 if (!fs.existsSync(IN_DIR)) fs.mkdirSync(IN_DIR, { recursive: true });
 if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
 
-let sendMeGroupId = null;
-let receiveMeGroupId = null;
+const sendMeGroupId = process.env.GROUP_ID;
+const receiveMeGroupId = process.env.RECEIVE_GROUP_ID;
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-        ],
-    },
-});
+if (!sendMeGroupId || !receiveMeGroupId) {
+    console.error('❌ Error: GROUP_ID or RECEIVE_GROUP_ID is missing from .env');
+    process.exit(1);
+}
+
+// Global socket reference
+let sock;
+let chokidarWatcher = null;
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('\n🛑 Stopping watcher...');
-    if (client) {
-        await client.destroy();
+async function gracefulShutdown() {
+    console.log('\n🛑 Shutting down gracefully...');
+    if (sock) {
+        sock.ev.flush();
+    }
+    if (chokidarWatcher) {
+        await chokidarWatcher.close();
     }
     process.exit(0);
-});
+}
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 
-client.on('qr', (qr) => {
-    console.log('QR RECEIVED. Please scan it with your WhatsApp app:');
-    qrcode.generate(qr, { small: true });
-});
-
-client.on('authenticated', () => {
-    console.log('Successfully authenticated!');
-});
-
-client.on('auth_failure', (msg) => {
-    console.error('❌ Authentication failure:', msg);
-});
-
-client.on('disconnected', (reason) => {
-    console.log('Disconnected:', reason);
-});
-
-client.on('ready', async () => {
-    console.log('Client is ready!');
-
-    const chats = await client.getChats();
-    const groups = chats.filter((chat) => chat.isGroup);
-
-    const sendMeGroup = groups.find((g) =>
-        g.name.toLowerCase().startsWith('send me'),
-    );
-    const receiveMeGroup = groups.find((g) =>
-        g.name.toLowerCase().startsWith('receive me'),
-    );
-
-    sendMeGroupId = sendMeGroup
-        ? sendMeGroup.id._serialized || sendMeGroup.id.$1
-        : process.env.GROUP_ID;
-    receiveMeGroupId = receiveMeGroup
-        ? receiveMeGroup.id._serialized || receiveMeGroup.id.$1
-        : process.env.RECEIVE_GROUP_ID;
-
-    if (!sendMeGroupId) {
-        console.error(
-            '❌ Could not find "send me" group and GROUP_ID is not set in .env.',
-        );
-        console.log('Available groups:');
-        groups.forEach((g) =>
-            console.log(` - ${g.name} (ID: ${g.id._serialized || g.id.$1})`),
-        );
-        process.exit(1);
+// --- HELPER TO EXTRACT MEDIA FROM MESSAGE ---
+function getMessageMedia(msg) {
+    if (!msg.message) return null;
+    const msgType = Object.keys(msg.message)[0];
+    if (msgType === 'imageMessage' || msgType === 'videoMessage' || msgType === 'documentMessage' || msgType === 'audioMessage') {
+        return { type: msgType, content: msg.message[msgType] };
     }
-
-    if (!receiveMeGroupId) {
-        console.warn(
-            '⚠️ Could not find "receive me" group. Outgoing uploads will be disabled for this run.',
-        );
+    if (msgType === 'ephemeralMessage') {
+        return getMessageMedia({ message: msg.message.ephemeralMessage.message });
     }
+    return null;
+}
 
-    console.log(`✅ Bound to "send me" group: ${sendMeGroupId}`);
-    if (receiveMeGroupId) {
-        console.log(`✅ Bound to "receive me" group: ${receiveMeGroupId}`);
-    }
-    console.log(`📂 Monitoring OUT_DIR: ${OUT_DIR}`);
-    console.log(`📂 Saving to IN_DIR: ${IN_DIR}`);
+// --- DELETION QUEUE ---
+const deletionQueue = [];
+let isProcessingDeletions = false;
 
-    // --- STARTUP SYNC: Process existing files in OUT_DIR ---
-    if (receiveMeGroupId) {
-        console.log(`🔍 Scanning OUT_DIR for offline files...`);
-        const outFiles = fs.readdirSync(OUT_DIR);
-        for (const filename of outFiles) {
-            if (filename.startsWith('.') || filename.endsWith('.tmp')) continue;
-            const filePath = path.join(OUT_DIR, filename);
-            try {
-                console.log(`📤 Uploading offline file: ${filename}`);
-                const media = MessageMedia.fromFilePath(filePath);
-                await client.sendMessage(receiveMeGroupId, media, {
-                    caption: filename,
-                });
-                fs.unlinkSync(filePath);
-                console.log(
-                    `✅ Uploaded and deleted offline file: ${filename}`,
-                );
+async function processDeletionQueue() {
+    if (isProcessingDeletions) return;
+    isProcessingDeletions = true;
 
-                // Add a small 2-second delay to avoid WhatsApp's anti-spam rate limits
-                await new Promise((r) => setTimeout(r, 2000));
-            } catch (err) {
-                console.error(
-                    `❌ Failed to upload offline file ${filename}:`,
-                    err,
-                );
-            }
-        }
-    }
-
-    // --- STARTUP SYNC: Process missed messages in "send me" group ---
-    if (sendMeGroupId) {
-        console.log(`🔍 Scanning "send me" group for missed media messages...`);
+    while (deletionQueue.length > 0) {
+        const key = deletionQueue.shift();
         try {
-            let chat = await client.getChatById(sendMeGroupId);
-            let retries = 10;
-            while (!chat && retries > 0) {
-                console.log(
-                    `⏳ Waiting for "send me" chat to be loaded by WhatsApp Web... (${retries} retries left)`,
-                );
-                await new Promise((r) => setTimeout(r, 2000));
-                chat = await client.getChatById(sendMeGroupId);
-                retries--;
-            }
-            if (!chat) {
-                throw new Error(`Could not get chat for ID: ${sendMeGroupId}`);
-            }
-            const messages = await chat.fetchMessages({ limit: 100 });
-            for (const msg of messages) {
-                if (msg.hasMedia) {
-                    console.log(`📩 Downloading missed media from WhatsApp...`);
-                    const media = await msg.downloadMedia();
-                    if (media) {
-                        const mimetypeStr = media.mimetype
-                            ? media.mimetype.split(';')[0]
-                            : '';
-                        const ext = mime.getExtension(mimetypeStr) || 'bin';
-                        let baseFilename =
-                            media.filename ||
-                            `download_${msg.id.id.slice(-5)}.${ext}`;
+            await sock.sendMessage(key.remoteJid, { delete: key });
+            console.log('🗑️ Deleted message via queue');
+        } catch (err) {
+            console.warn('⚠️ Could not delete message via queue:', err.message);
+        }
+        await new Promise((r) => setTimeout(r, 2000)); // Rate limit buffer
+    }
 
-                        let filePath = path.join(IN_DIR, baseFilename);
-                        if (fs.existsSync(filePath)) {
-                            baseFilename = `${Date.now()}_${baseFilename}`;
-                            filePath = path.join(IN_DIR, baseFilename);
-                        }
+    isProcessingDeletions = false;
+}
 
-                        fs.writeFileSync(filePath, media.data, {
-                            encoding: 'base64',
-                        });
-                        console.log(
-                            `✅ Saved missed file to IN_DIR: ${filePath}`,
+// --- CORE CONNECTION FUNCTION ---
+async function startClient() {
+    console.log('⏳ Initializing WhatsApp client (Baileys)...');
+    
+    // Auth state mapping
+    const { state, saveCreds } = await useMultiFileAuthState('.baileys_auth');
+
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: pino({ level: 'silent' }), // Hide noisy Baileys logs
+        syncFullHistory: false, // Don't download all old chats to save RAM
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr) {
+            console.log('Generating QR code image...');
+            const qrPath = path.join(process.cwd(), 'qr.png');
+            QRCode.toFile(
+                qrPath,
+                qr,
+                { errorCorrectionLevel: 'H' },
+                (err) => {
+                    if (err) console.error('Failed to save QR code image', err);
+                    else console.log(`✅ QR Code saved to ${qrPath}! Please scan it.`);
+                }
+            );
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log(`❌ Connection closed. Reconnecting: ${shouldReconnect}`, lastDisconnect?.error);
+            if (shouldReconnect) {
+                startClient();
+            } else {
+                console.log('❌ You are logged out. Please delete .baileys_auth folder and restart to scan QR code.');
+                process.exit(1);
+            }
+        } else if (connection === 'open') {
+            console.log('✅ Client is ready and connected!');
+            setupPostConnectionLogic();
+        }
+    });
+
+    // --- INBOUND SYNC LISTENER ("send me" -> IN_DIR) ---
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return; // Only process new messages
+        
+        for (const msg of messages) {
+            if (!msg.message) continue;
+            
+            const chatId = msg.key.remoteJid;
+            
+            // Only listen to "send me" group
+            if (chatId === sendMeGroupId) {
+                const mediaData = getMessageMedia(msg);
+                
+                if (mediaData) {
+                    console.log('📩 Detected media in "send me" group. Downloading...');
+                    try {
+                        // Download the decrypted binary stream
+                        const buffer = await downloadMediaMessage(
+                            msg,
+                            'buffer',
+                            {},
+                            { 
+                                logger: pino({ level: 'silent' }),
+                                reuploadRequest: sock.updateMediaMessage
+                            }
                         );
 
-                        try {
-                            const msgToDel = await client.getMessageById(
-                                msg.id._serialized || msg.id.$1,
-                            );
-                            if (msgToDel) await msgToDel.delete(true);
-                            console.log(
-                                `🗑️ Revoked missed message for everyone`,
-                            );
-                        } catch (ignoredError) {
-                            try {
-                                const msgToDel = await client.getMessageById(
-                                    msg.id._serialized || msg.id.$1,
-                                );
-                                if (msgToDel) await msgToDel.delete(false);
-                                console.log(`🗑️ Deleted missed message for me`);
-                            } catch (delMeErr) {
-                                console.warn(
-                                    `⚠️ Could not delete missed message:`,
-                                    delMeErr.message,
-                                );
-                            }
-                        }
+                        if (buffer) {
+                            const mimetypeStr = mediaData.content.mimetype || '';
+                            const ext = mime.getExtension(mimetypeStr.split(';')[0]) || 'bin';
+                            let baseFilename = mediaData.content.fileName || `download_${msg.key.id.slice(-5)}.${ext}`;
 
-                        // Add a small 2-second delay to avoid WhatsApp's anti-spam rate limits
-                        await new Promise((r) => setTimeout(r, 2000));
+                            let filePath = path.join(IN_DIR, baseFilename);
+                            if (fs.existsSync(filePath)) {
+                                filePath = path.join(IN_DIR, `${Date.now()}_${baseFilename}`);
+                            }
+
+                            fs.writeFileSync(filePath, buffer);
+                            console.log(`✅ Saved file to IN_DIR: ${filePath}`);
+
+                            // Queue message for deletion
+                            deletionQueue.push(msg.key);
+                            processDeletionQueue();
+                        }
+                    } catch (err) {
+                        console.error('❌ Failed to process incoming media:', err);
                     }
                 }
             }
-        } catch (err) {
-            console.error(`❌ Failed to sync missed messages:`, err);
+        }
+    });
+}
+
+const outboundQueue = [];
+let isProcessingOutbound = false;
+
+async function processOutboundQueue() {
+    if (isProcessingOutbound) return;
+    isProcessingOutbound = true;
+
+    while (outboundQueue.length > 0) {
+        const { filePath, filename } = outboundQueue.shift();
+        if (fs.existsSync(filePath)) {
+            await processOutboundFile(filePath, filename);
+            // Wait 2 seconds between uploads to strictly avoid WhatsApp rate limits
+            await new Promise((r) => setTimeout(r, 2000));
         }
     }
 
-    // --- SETUP CHOKIDAR ON OUT DIRECTORY ---
-    const fsWatcher = chokidar.watch(OUT_DIR, {
+    isProcessingOutbound = false;
+}
+
+function setupPostConnectionLogic() {
+    // We bind Chokidar ONLY after connection is fully established
+    console.log(`✅ Bound to "send me" group: ${sendMeGroupId}`);
+    console.log(`✅ Bound to "receive me" group: ${receiveMeGroupId}`);
+    console.log(`📂 Monitoring OUT_DIR: ${OUT_DIR}`);
+    console.log(`📂 Saving to IN_DIR: ${IN_DIR}`);
+
+    if (chokidarWatcher) {
+        chokidarWatcher.close();
+    }
+
+    // Process offline files currently in OUT_DIR
+    const files = fs.readdirSync(OUT_DIR);
+    for (const file of files) {
+        if (file.startsWith('.') || file.endsWith('.tmp')) continue;
+        console.log(`🔍 Found offline file to queue: ${file}`);
+        outboundQueue.push({ filePath: path.join(OUT_DIR, file), filename: file });
+    }
+    if (outboundQueue.length > 0) processOutboundQueue();
+
+    chokidarWatcher = chokidar.watch(OUT_DIR, {
         ignoreInitial: true,
         awaitWriteFinish: {
             stabilityThreshold: 2000,
@@ -228,189 +243,52 @@ client.on('ready', async () => {
         },
     });
 
-    fsWatcher.on('error', (error) =>
-        console.error('Chokidar Watcher error:', error),
-    );
-
-    fsWatcher.on('add', async (filePath) => {
-        try {
-            const filename = path.basename(filePath);
-            console.log(`📤 Uploading file: ${filename}`);
-
-            // Skip temporary or hidden files
-            if (filename.startsWith('.') || filename.endsWith('.tmp')) return;
-
-            const media = MessageMedia.fromFilePath(filePath);
-
-            // Upload to receive me group
-            await client.sendMessage(receiveMeGroupId, media, {
-                caption: filename,
-            });
-            console.log(`✅ Uploaded to WhatsApp: ${filename}`);
-
-            // Delete from out folder
-            fs.unlinkSync(filePath);
-            console.log(`🗑️ Deleted from out folder: ${filename}`);
-        } catch (err) {
-            console.error(`❌ Failed to upload ${filePath}:`, err);
-        }
+    chokidarWatcher.on('add', (filePath) => {
+        const filename = path.basename(filePath);
+        if (filename.startsWith('.') || filename.endsWith('.tmp')) return;
+        outboundQueue.push({ filePath, filename });
+        processOutboundQueue();
     });
-});
-
-// === DELETION QUEUE FOR BULK MESSAGES ===
-const incomingDeletionQueue = [];
-let isProcessingDeletions = false;
-
-async function processDeletions() {
-    if (isProcessingDeletions) return;
-    isProcessingDeletions = true;
-
-    while (incomingDeletionQueue.length > 0) {
-        const msgId = incomingDeletionQueue.shift();
-        try {
-            const msgToDel = await client.getMessageById(msgId);
-            if (msgToDel) {
-                await msgToDel.delete(true);
-                console.log(`🗑️ Revoked queued message for everyone`);
-            } else {
-                console.warn(`⚠️ Could not fetch queued message to delete.`);
-            }
-        } catch (ignoredError) {
-            try {
-                const msgToDel = await client.getMessageById(msgId);
-                if (msgToDel) await msgToDel.delete(false);
-                console.log(`🗑️ Deleted queued message for me`);
-            } catch (delMeErr) {
-                console.warn(
-                    `⚠️ Could not delete queued message:`,
-                    delMeErr.message,
-                );
-            }
-        }
-
-        // Wait 2.5 seconds between deletions to strictly avoid WhatsApp rate limits
-        await new Promise((r) => setTimeout(r, 2500));
-    }
-
-    isProcessingDeletions = false;
 }
 
-client.on('message_create', async (msg) => {
-    console.log(
-        `[DEBUG] message_create fired! from: ${msg.from}, to: ${msg.to}, hasMedia: ${msg.hasMedia}`,
-    );
-    // Only process messages in the "send me" group
-    if (msg.from !== sendMeGroupId && msg.to !== sendMeGroupId) {
-        console.log(
-            `[DEBUG] Ignored message not for "send me" group (expected ${sendMeGroupId})`,
-        );
-        return;
-    }
-
-    if (msg.hasMedia) {
-        try {
-            console.log(`📩 Detected media in "send me" group. Downloading...`);
-            const media = await msg.downloadMedia();
-
-            if (media) {
-                const mimetypeStr = media.mimetype
-                    ? media.mimetype.split(';')[0]
-                    : '';
-                const ext = mime.getExtension(mimetypeStr) || 'bin';
-
-                let baseFilename = media.filename;
-                if (!baseFilename) {
-                    baseFilename = `download_${msg.id.id.slice(-5)}.${ext}`;
-                } else if (!baseFilename.includes('.')) {
-                    baseFilename = `${baseFilename}.${ext}`;
-                }
-
-                // If file already exists in IN_DIR, prepend timestamp
-                let filePath = path.join(IN_DIR, baseFilename);
-                if (fs.existsSync(filePath)) {
-                    baseFilename = `${Date.now()}_${baseFilename}`;
-                    filePath = path.join(IN_DIR, baseFilename);
-                }
-
-                fs.writeFileSync(filePath, media.data, { encoding: 'base64' });
-                console.log(`✅ Saved to IN_DIR: ${filePath}`);
-
-                // Queue the message for deletion instead of deleting it immediately
-                // This prevents rate limits when 60+ images are sent at once!
-                incomingDeletionQueue.push(msg.id._serialized || msg.id.$1);
-                processDeletions();
-            }
-        } catch (err) {
-            console.error('❌ Failed to process incoming media:', err);
-        }
-    }
-});
-
-const { exec } = require('child_process');
-
-async function startClient() {
+// --- OUTBOUND SYNC HANDLER (OUT_DIR -> "receive me") ---
+async function processOutboundFile(filePath, filename) {
     try {
-        await client.initialize();
-    } catch (err) {
-        if (err.message.includes('browser is already running')) {
-            console.log(
-                '\n⚠️ Orphaned browser session detected! Cleaning up background processes...',
-            );
-
-            // Delete the lockfile if it exists
-            const lockPath = path.join(
-                __dirname,
-                '.wwebjs_auth',
-                'session',
-                'SingletonLock',
-            );
-            if (fs.existsSync(lockPath)) {
-                try {
-                    fs.unlinkSync(lockPath);
-                } catch (ignoredError) {
-                    /* ignore */
-                }
-            }
-
-            // Kill orphaned headless Chrome processes tied to this project
-            exec(
-                `wmic process where "name='chrome.exe' and commandline like '%whatsapp-sync%'" call terminate`,
-                async () => {
-                    console.log(
-                        '✅ Cleanup complete. Retrying WhatsApp connection...\n',
-                    );
-                    try {
-                        await client.initialize();
-                    } catch (retryErr) {
-                        console.error(
-                            '❌ Failed to initialize after cleanup:',
-                            retryErr,
-                        );
-                    }
-                },
-            );
+        console.log(`📤 Uploading file: ${filename}`);
+        const buffer = fs.readFileSync(filePath);
+        
+        const mimetype = mime.getType(filePath) || 'application/octet-stream';
+        
+        let messagePayload = {};
+        if (mimetype.startsWith('image/')) {
+            messagePayload = { image: buffer, caption: filename };
+        } else if (mimetype.startsWith('video/')) {
+            messagePayload = { video: buffer, caption: filename };
+        } else if (mimetype.startsWith('audio/')) {
+            messagePayload = { audio: buffer }; // Audio doesn't support captions in the same way, but Baileys handles it
         } else {
-            console.error('❌ Fatal error starting client:', err);
+            messagePayload = { document: buffer, mimetype: mimetype, fileName: filename };
         }
+
+        // Upload to receive me group
+        await sock.sendMessage(receiveMeGroupId, messagePayload);
+        console.log(`✅ Uploaded to WhatsApp: ${filename}`);
+
+        // Delete from out folder
+        fs.unlinkSync(filePath);
+        console.log(`🗑️ Deleted from out folder: ${filename}`);
+    } catch (err) {
+        console.error(`❌ Failed to upload ${filePath}:`, err);
     }
 }
 
-startClient();
-
-// --- GRACEFUL SHUTDOWN ---
-// This ensures that when you stop the script (Ctrl+C), it properly closes
-// the hidden Chrome browser so it doesn't leave orphaned processes behind!
-async function gracefulShutdown() {
-    console.log('\n🛑 Shutting down gracefully... Closing Chrome browser...');
-    try {
-        await client.destroy();
-        console.log('✅ Browser closed safely.');
-    } catch (ignoredError) {
-        // Ignore errors during shutdown
-    }
-    process.exit(0);
+async function startWatcher() {
+    await startClient();
+    return sock; // Export socket for testing
 }
 
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGQUIT', gracefulShutdown);
+if (require.main === module) {
+    startWatcher();
+}
+
+module.exports = { startWatcher, getSocket: () => sock };
