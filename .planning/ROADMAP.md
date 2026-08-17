@@ -1,31 +1,28 @@
 # Roadmap: whatsapp-sync
 
-## Phase 1: Rip out whatsapp-web.js and install Baileys
-Remove the `whatsapp-web.js` package and all its specific types/imports from the codebase. Install `@whiskeysockets/baileys` and its required dependencies.
+## Milestones
 
-**Covered Requirements:**
-- MIGR-01
+- ✅ **v3.0 Baileys Migration** — Phases 1-5 (shipped 2026-08-17)
 
-## Phase 2: Rewrite watcher.js connection and authentication logic
-Implement the Baileys socket connection, state management, and QR code generation for terminal authentication using `makeWASocket` and `useMultiFileAuthState`.
+## Phases
 
-**Covered Requirements:**
-- MIGR-02
+<details>
+<summary>✅ v3.0 Baileys Migration (Phases 1-5) — SHIPPED 2026-08-17</summary>
 
-## Phase 3: Implement Baileys inbound sync (send me -> IN_DIR)
-Rewrite the `message_create` (or `messages.upsert` in Baileys) listener. It must detect media messages sent to/from the `GROUP_ID`, extract the decrypted media stream using `downloadMediaMessage`, and save it to the IN_DIR without triggering anti-spam locks.
+- [x] Phase 1: Rip out whatsapp-web.js and install Baileys — completed 2026-08-17
+- [x] Phase 2: Rewrite watcher.js connection and authentication logic — completed 2026-08-17
+- [x] Phase 3: Implement Baileys inbound sync (send me -> IN_DIR) — completed 2026-08-17
+- [x] Phase 4: Implement Baileys outbound sync (OUT_DIR -> receive me) — completed 2026-08-17
+- [x] Phase 5: Update E2E Playwright tests for Baileys — completed 2026-08-17
 
-**Covered Requirements:**
-- MIGR-03
+</details>
 
-## Phase 4: Implement Baileys outbound sync (OUT_DIR -> receive me)
-Rewrite the chokidar listener to upload files from OUT_DIR to the `RECEIVE_GROUP_ID` using `sendMessage` with the correct mimetype extraction and media buffering, then immediately delete the local file.
+## Progress
 
-**Covered Requirements:**
-- MIGR-04
-
-## Phase 5: Update E2E Playwright tests for Baileys
-Modify the Playwright tests to work with the new Baileys setup. Note that since Baileys doesn't use Puppeteer, the tests may need to interact with the socket directly or rely solely on filesystem assertions.
-
-**Covered Requirements:**
-- MIGR-05
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Rip out whatsapp-web.js and install Baileys | v3.0 | 0/0 | Complete | 2026-08-17 |
+| 2. Rewrite watcher.js connection and authentication logic | v3.0 | 0/0 | Complete | 2026-08-17 |
+| 3. Implement Baileys inbound sync (send me -> IN_DIR) | v3.0 | 1/1 | Complete | 2026-08-17 |
+| 4. Implement Baileys outbound sync (OUT_DIR -> receive me) | v3.0 | 0/0 | Complete | 2026-08-17 |
+| 5. Update E2E Playwright tests for Baileys | v3.0 | 0/0 | Complete | 2026-08-17 |
