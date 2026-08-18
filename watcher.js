@@ -62,13 +62,29 @@ process.on('SIGTERM', gracefulShutdown);
 // --- HELPER TO EXTRACT MEDIA FROM MESSAGE ---
 function getMessageMedia(msg) {
     if (!msg.message) return null;
-    const msgType = Object.keys(msg.message)[0];
-    if (msgType === 'imageMessage' || msgType === 'videoMessage' || msgType === 'documentMessage' || msgType === 'audioMessage') {
-        return { type: msgType, content: msg.message[msgType] };
-    }
-    if (msgType === 'ephemeralMessage') {
+    
+    // Sometimes baileys wraps messages, e.g., ephemeralMessage or documentWithCaptionMessage
+    if (msg.message.ephemeralMessage) {
         return getMessageMedia({ message: msg.message.ephemeralMessage.message });
     }
+    if (msg.message.documentWithCaptionMessage) {
+        return getMessageMedia({ message: msg.message.documentWithCaptionMessage.message });
+    }
+    if (msg.message.viewOnceMessage) {
+        return getMessageMedia({ message: msg.message.viewOnceMessage.message });
+    }
+    if (msg.message.viewOnceMessageV2) {
+        return getMessageMedia({ message: msg.message.viewOnceMessageV2.message });
+    }
+
+    // Look for standard media keys anywhere in the message object
+    const mediaKeys = ['imageMessage', 'videoMessage', 'documentMessage', 'audioMessage'];
+    for (const key of mediaKeys) {
+        if (msg.message[key]) {
+            return { type: key, content: msg.message[key] };
+        }
+    }
+    
     return null;
 }
 
