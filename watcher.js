@@ -178,12 +178,13 @@ async function startClient() {
 
     // --- INBOUND SYNC LISTENER ("send me" -> IN_DIR) ---
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return; // Only process new messages
+        console.log(`[DEBUG] Received messages.upsert of type: ${type}`);
         
         for (const msg of messages) {
             if (!msg.message) continue;
             
             const chatId = msg.key.remoteJid;
+            console.log(`[DEBUG] Message chatId: ${chatId} | FromMe: ${msg.key.fromMe}`);
             
             // Only listen to "send me" group
             if (chatId === sendMeGroupId) {
